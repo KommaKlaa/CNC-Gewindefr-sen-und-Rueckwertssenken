@@ -13,7 +13,7 @@ import tempfile
 import traceback
 from typing import Any, Dict, List
 
-from app_info import APP_NAME, APP_VERSION
+from app_info import APP_AUTHOR, APP_EMAIL, APP_NAME, APP_VERSION, APP_WEBSITE
 from app_paths import APP_ICON_PNG_REL, resource_path
 from bsf_blade import MEASUREMENT_LABELS, BladeMeasurementReference
 from coordinates import BGFCoordinatePosition, BSFCoordinatePosition
@@ -69,6 +69,7 @@ def _execute_smoke(app) -> Dict[str, Any]:
 
     record("png_icon", lambda: resource_path(APP_ICON_PNG_REL).is_file())
     record("about", lambda: _open_about(app))
+    record("programmer", lambda: _programmer_runtime(app))
     record("bgf_nc", lambda: _bgf_nc(app))
     record("bgf_list_files", lambda: _bgf_files(app))
     record("bgf_preview_help", lambda: _bgf_windows(app))
@@ -92,8 +93,165 @@ def _open_about(app) -> str:
 
     win = open_about_window(app.root)
     title = win.title()
+    texts: List[str] = []
+
+    def collect(widget) -> None:
+        try:
+            texts.append(str(widget.cget("text")))
+        except Exception:
+            pass
+        for child in widget.winfo_children():
+            collect(child)
+
+    collect(win)
+    blob = "\n".join(texts)
     win.destroy()
+    if APP_AUTHOR not in blob or APP_WEBSITE not in blob or APP_EMAIL not in blob:
+        raise RuntimeError("Info-Fenster ohne Jens Behm / Website / E-Mail.")
     return title
+
+
+def _prepare_bgf_single(app) -> None:
+    app.mode_var.set(MODE_BGF)
+    app.on_mode_change(None)
+    app.bgf_size_var.set("M10")
+    app.load_bgf_values()
+    app.position_mode_var.set("Einzelposition")
+    app.on_position_mode_change(None)
+    for key, val in (
+        ("single_x", "0"),
+        ("single_y", "0"),
+        ("single_surface_z", "0"),
+        ("approach_clearance", "5"),
+        ("bgf_thread_depth", "20"),
+        ("bgf_core_hole_depth", ""),
+    ):
+        app.entries[key].delete(0, "end")
+        app.entries[key].insert(0, val)
+
+
+def _prepare_bsf_single(app) -> None:
+    app.mode_var.set(MODE_BSF)
+    app.on_mode_change(None)
+    app.position_mode_var.set("Einzelposition")
+    app.on_position_mode_change(None)
+    app.entries["blade_thickness"].delete(0, "end")
+    app.entries["blade_thickness"].insert(0, "3")
+    app.blade_measurement_var.set(MEASUREMENT_LABELS[BladeMeasurementReference.SPINDLE_SIDE_EDGE])
+
+
+def _programmer_runtime(app) -> Dict[str, str]:
+    from coordinates import (
+        import_bgf_csv_text,
+        load_bsf_document_json,
+        load_document_json,
+        save_bsf_document_json,
+        save_document_json,
+        write_bgf_csv_file,
+    )
+    from coordinates.bgf_list_document import document_to_dict as bgf_to_dict
+    from coordinates.bgf_list_document import parse_document_dict as parse_bgf
+    from coordinates.bsf_list_document import document_to_dict as bsf_to_dict
+    from coordinates.bsf_list_document import parse_document_dict as parse_bsf
+
+    if "programmer" not in app.entries:
+        raise RuntimeError("Programmierer-Feld fehlt in der GUI.")
+    if app.programmer_var.get() != "":
+        raise RuntimeError("Programmierer-Feld ist nicht leer beim Start.")
+
+    app.programmer_var.set("")
+    _prepare_bgf_single(app)
+    app.generate_bgf_code()
+    bgf_empty = app.output_text.get("1.0", "end")
+    if "PROGRAMMIERER" in bgf_empty or "Jens Behm" in bgf_empty:
+        raise RuntimeError("Leerer Programmierer: BGF-NC enthaelt PROGRAMMIERER oder Jens Behm.")
+
+    _prepare_bsf_single(app)
+    app.generate_bsf_code()
+    bsf_empty = app.output_text.get("1.0", "end")
+    if "PROGRAMMIERER" in bsf_empty or "Jens Behm" in bsf_empty:
+        raise RuntimeError("Leerer Programmierer: BSF-NC enthaelt PROGRAMMIERER oder Jens Behm.")
+
+    name = "Jörg Müller"
+    line = f"; PROGRAMMIERER: {name}"
+    app.programmer_var.set(name)
+    _prepare_bgf_single(app)
+    app.generate_bgf_code()
+    bgf_named = app.output_text.get("1.0", "end")
+    if bgf_named.count(line) != 1:
+        raise RuntimeError("BGF-Programmierer-Kommentar fehlt oder mehrfach.")
+
+    _prepare_bsf_single(app)
+    app.generate_bsf_code()
+    bsf_named = app.output_text.get("1.0", "end")
+    if bsf_named.count(line) != 1:
+        raise RuntimeError("BSF-Programmierer-Kommentar fehlt oder mehrfach.")
+
+    h_path = os.path.join(tempfile.gettempdir(), "nc_generator_programmer.H")
+    with open(h_path, "w", encoding="cp1252", errors="strict") as handle:
+        handle.write(bsf_named)
+    with open(h_path, "r", encoding="cp1252") as handle:
+        h_text = handle.read()
+    if name not in h_text:
+        raise RuntimeError("cp1252 .H-Export ohne Umlaut-Programmierer.")
+
+    tmp = tempfile.mkdtemp(prefix="nc_smoke_prog_")
+    app.mode_var.set(MODE_BGF)
+    app.on_mode_change(None)
+    app.coord_rows = [BGFCoordinatePosition(0, 0, 0, 20.0)]
+    app.position_mode_var.set("Koordinatenliste")
+    app.on_position_mode_change(None)
+    bgf_doc = app._collect_position_list_document()
+    bgf_json = os.path.join(tmp, "p.bgf.json")
+    save_document_json(bgf_json, bgf_doc)
+    loaded_bgf = load_document_json(bgf_json)
+    if loaded_bgf.programmer != name:
+        raise RuntimeError("BGF JSON Roundtrip verlor den Programmierer.")
+    legacy_bgf = bgf_to_dict(loaded_bgf)
+    del legacy_bgf["program"]["programmer"]
+    if parse_bgf(legacy_bgf).programmer != "":
+        raise RuntimeError("Legacy BGF JSON ohne programmer nicht leer.")
+
+    app.mode_var.set(MODE_BSF)
+    app.on_mode_change(None)
+    app.bsf_coord_rows = [BSFCoordinatePosition(0, 0)]
+    app.position_mode_var.set("Koordinatenliste")
+    app.on_position_mode_change(None)
+    bsf_doc = app._collect_bsf_position_list_document()
+    bsf_json = os.path.join(tmp, "p.bsf.json")
+    save_bsf_document_json(bsf_json, bsf_doc)
+    loaded_bsf = load_bsf_document_json(bsf_json)
+    if loaded_bsf.programmer != name:
+        raise RuntimeError("BSF JSON Roundtrip verlor den Programmierer.")
+    legacy_bsf = bsf_to_dict(loaded_bsf)
+    del legacy_bsf["program"]["programmer"]
+    if parse_bsf(legacy_bsf).programmer != "":
+        raise RuntimeError("Legacy BSF JSON ohne programmer nicht leer.")
+
+    csv_path = os.path.join(tmp, "pos.csv")
+    write_bgf_csv_file(csv_path, app.coord_rows)
+    with open(csv_path, "r", encoding="utf-8") as handle:
+        csv_text = handle.read()
+        import_bgf_csv_text(csv_text, default_thread_depth=20.0)
+    if app.programmer_var.get() != name:
+        raise RuntimeError("CSV-Import hat den Programmierer veraendert.")
+    if "programmer" in csv_text.lower() or "jörg" in csv_text.lower():
+        raise RuntimeError("CSV enthaelt Programmierer-Daten.")
+
+    app.programmer_var.set("")
+    return {
+        "field_visible": "True",
+        "empty_bgf": "True",
+        "empty_bsf": "True",
+        "named_bgf": "True",
+        "named_bsf": "True",
+        "cp1252": "True",
+        "bgf_json": "True",
+        "bsf_json": "True",
+        "legacy_json": "True",
+        "csv": "True",
+        "keyword": "PROGRAMMIERER",
+    }
 
 
 def _bgf_nc(app) -> Dict[str, str]:

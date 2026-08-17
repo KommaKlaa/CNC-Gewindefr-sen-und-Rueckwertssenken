@@ -123,6 +123,10 @@ def _run_smoke(exe: Path, label: str) -> Dict[str, object]:
         raise ReleaseAborted(f"BSF-Smoke fehlgeschlagen ({label}): {bsf}")
     if not data.get("steps", {}).get("heidenhain_h"):
         raise ReleaseAborted(f".H-Export-Smoke fehlgeschlagen ({label})")
+    prog = data.get("steps", {}).get("programmer") or {}
+    for key in ("empty_bgf", "empty_bsf", "named_bgf", "named_bsf", "cp1252", "bgf_json", "bsf_json", "legacy_json", "csv"):
+        if str(prog.get(key)) != "True":
+            raise ReleaseAborted(f"Programmer-Smoke fehlgeschlagen ({label}): {prog}")
     return data
 
 

@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.coverage
+htmlcov/
 
 # Nuitka / Packaging
 build/
@@ -14,8 +16,12 @@ nuitka-crash-report.xml
 # Release artefacts (CHANGELOG.md and build_tools stay versioned)
 release/
 
-# Local user / machine project files (not fixtures)
+# Local user / machine project files (not test fixtures)
 *.H
 *.bgf.json
 *.bsf.json
-*.csv
+/*.csv
+
+# IDE
+.vscode/
+.idea/
