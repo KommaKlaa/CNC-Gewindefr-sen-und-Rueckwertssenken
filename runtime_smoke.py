@@ -1,0 +1,273 @@
+"""Optionaler Runtime-Smoke fuer die kompilierte Standalone-EXE.
+
+Aktivierung: Umgebungsvariable NC_GENERATOR_RUNTIME_SMOKE=1
+Schreibt einen Report nach %%TEMP%%\\nc_generator_smoke_report.json
+und beendet die Anwendung. Keine CNC-Logikaenderung.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+import traceback
+from typing import Any, Dict, List
+
+from app_info import APP_NAME, APP_VERSION
+from app_paths import APP_ICON_PNG_REL, resource_path
+from bsf_blade import MEASUREMENT_LABELS, BladeMeasurementReference
+from coordinates import BGFCoordinatePosition, BSFCoordinatePosition
+from ui import MODE_BGF, MODE_BSF
+
+
+def schedule_runtime_smoke_if_requested(app) -> None:
+    if os.environ.get("NC_GENERATOR_RUNTIME_SMOKE") != "1":
+        return
+    app.root.after(400, lambda: _run_and_exit(app))
+
+
+def _run_and_exit(app) -> None:
+    report = _execute_smoke(app)
+    out = os.environ.get("NC_GENERATOR_SMOKE_REPORT") or os.path.join(
+        tempfile.gettempdir(), "nc_generator_smoke_report.json"
+    )
+    with open(out, "w", encoding="utf-8") as handle:
+        json.dump(report, handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
+    code = 0 if report.get("ok") else 1
+    app.root.after(100, lambda: _quit(app, code))
+
+
+def _quit(app, code: int) -> None:
+    try:
+        app.root.destroy()
+    finally:
+        os._exit(code)
+
+
+def _silence_boxes() -> None:
+    import tkinter.messagebox as mb
+
+    mb.showerror = lambda *a, **k: None
+    mb.showwarning = lambda *a, **k: None
+    mb.showinfo = lambda *a, **k: None
+    mb.askyesno = lambda *a, **k: True
+    mb.askyesnocancel = lambda *a, **k: True
+
+
+def _execute_smoke(app) -> Dict[str, Any]:
+    steps: Dict[str, Any] = {}
+    errors: List[str] = []
+    _silence_boxes()
+
+    def record(name: str, fn) -> None:
+        try:
+            steps[name] = fn()
+        except Exception as exc:
+            steps[name] = f"FAIL: {exc}"
+            errors.append(f"{name}: {exc}\n{traceback.format_exc()}")
+
+    record("png_icon", lambda: resource_path(APP_ICON_PNG_REL).is_file())
+    record("about", lambda: _open_about(app))
+    record("bgf_nc", lambda: _bgf_nc(app))
+    record("bgf_list_files", lambda: _bgf_files(app))
+    record("bgf_preview_help", lambda: _bgf_windows(app))
+    record("bsf_nc", lambda: _bsf_nc(app))
+    record("bsf_list_files", lambda: _bsf_files(app))
+    record("bsf_preview_help", lambda: _bsf_windows(app))
+    record("heidenhain_h", lambda: _export_h(app))
+    record("file_dialogs_cancel", lambda: _file_dialogs_cancel(app))
+
+    return {
+        "ok": not errors,
+        "app": APP_NAME,
+        "version": APP_VERSION,
+        "steps": steps,
+        "errors": errors,
+    }
+
+
+def _open_about(app) -> str:
+    from ui.about import open_about_window
+
+    win = open_about_window(app.root)
+    title = win.title()
+    win.destroy()
+    return title
+
+
+def _bgf_nc(app) -> Dict[str, str]:
+    app.mode_var.set(MODE_BGF)
+    app.on_mode_change(None)
+    app.bgf_size_var.set("M10")
+    app.load_bgf_values()
+    app.position_mode_var.set("Einzelposition")
+    app.on_position_mode_change(None)
+    for key, val in (
+        ("single_x", "0"),
+        ("single_y", "0"),
+        ("single_surface_z", "0"),
+        ("approach_clearance", "5"),
+        ("bgf_thread_depth", "20"),
+        ("bgf_core_hole_depth", ""),
+    ):
+        app.entries[key].delete(0, "end")
+        app.entries[key].insert(0, val)
+    app.generate_bgf_code()
+    code = app.output_text.get("1.0", "end")
+    return {
+        "has_begin": str("BEGIN PGM" in code),
+        "mill": str("L Z-19.8390" in code or "Z-19.8390" in code),
+        "drill": str("L Z-22.8100" in code or "Z-22.8100" in code),
+        "snippet_ok": str("Z-19.8390" in code and "Z-22.8100" in code),
+    }
+
+
+def _bgf_files(app) -> str:
+    from coordinates import (
+        import_bgf_csv_text,
+        load_document_json,
+        save_document_json,
+        write_bgf_csv_file,
+    )
+
+    tmp = tempfile.mkdtemp(prefix="nc_smoke_bgf_")
+    app.coord_rows = [
+        BGFCoordinatePosition(0, 0, 0, 20.0),
+        BGFCoordinatePosition(100, 50, 0, 20.0),
+        BGFCoordinatePosition(-10, 20, 0, 20.0),
+    ]
+    app.position_mode_var.set("Koordinatenliste")
+    app.on_position_mode_change(None)
+    doc = app._collect_position_list_document()
+    json_path = os.path.join(tmp, "smoke.bgf.json")
+    csv_path = os.path.join(tmp, "smoke.csv")
+    save_document_json(json_path, doc)
+    write_bgf_csv_file(csv_path, app.coord_rows)
+    loaded = load_document_json(json_path)
+    if len(loaded.positions) != 3:
+        raise RuntimeError("BGF JSON-Rundlauf fehlgeschlagen.")
+    with open(csv_path, "r", encoding="utf-8") as handle:
+        imported = import_bgf_csv_text(handle.read(), default_thread_depth=20.0)
+    if len(imported) != 3:
+        raise RuntimeError("BGF CSV-Rundlauf fehlgeschlagen.")
+    return tmp
+
+
+def _bgf_windows(app) -> str:
+    from help_views.bgf_geometry_help import BGFGeometryHelpWindow
+    from preview.bgf_preview_window import BGFPreviewWindow
+
+    preview = BGFPreviewWindow(app.root, snapshot_provider=app.build_preview_snapshot)
+    preview.win.update_idletasks()
+    help_win = BGFGeometryHelpWindow(app.root, source_provider=app.collect_bgf_help_source)
+    help_win.win.update_idletasks()
+    titles = f"{preview.win.title()} | {help_win.win.title()}"
+    preview.win.destroy()
+    help_win.win.destroy()
+    return titles
+
+
+def _bsf_nc(app) -> Dict[str, str]:
+    app.mode_var.set(MODE_BSF)
+    app.on_mode_change(None)
+    app.position_mode_var.set("Einzelposition")
+    app.on_position_mode_change(None)
+    app.entries["blade_thickness"].delete(0, "end")
+    app.entries["blade_thickness"].insert(0, "3")
+    app.blade_measurement_var.set(MEASUREMENT_LABELS[BladeMeasurementReference.SPINDLE_SIDE_EDGE])
+    app.generate_bsf_code()
+    code = app.output_text.get("1.0", "end")
+    return {
+        "has_begin": str("BEGIN PGM" in code),
+        "has_m5": str("M5 ; Spindel aus" in code),
+        "has_cycl9": str("CYCL DEF 9.1" in code),
+    }
+
+
+def _bsf_files(app) -> str:
+    from coordinates import (
+        import_bsf_csv_text,
+        load_bsf_document_json,
+        save_bsf_document_json,
+        write_bsf_csv_file,
+    )
+
+    tmp = tempfile.mkdtemp(prefix="nc_smoke_bsf_")
+    app.bsf_coord_rows = [
+        BSFCoordinatePosition(0, 0),
+        BSFCoordinatePosition(100, 50),
+        BSFCoordinatePosition(-20, 10),
+    ]
+    app.position_mode_var.set("Koordinatenliste")
+    app.on_position_mode_change(None)
+    doc = app._collect_bsf_position_list_document()
+    json_path = os.path.join(tmp, "smoke.bsf.json")
+    csv_path = os.path.join(tmp, "smoke.csv")
+    save_bsf_document_json(json_path, doc)
+    write_bsf_csv_file(csv_path, app.bsf_coord_rows)
+    loaded = load_bsf_document_json(json_path)
+    if len(loaded.positions) != 3:
+        raise RuntimeError("BSF JSON-Rundlauf fehlgeschlagen.")
+    with open(csv_path, "r", encoding="utf-8") as handle:
+        imported = import_bsf_csv_text(handle.read())
+    if len(imported) != 3:
+        raise RuntimeError("BSF CSV-Rundlauf fehlgeschlagen.")
+    return tmp
+
+
+def _bsf_windows(app) -> str:
+    from help_views.bsf_geometry_help import BSFGeometryHelpWindow
+    from preview.bgf_preview_window import BGFPreviewWindow
+
+    preview = BGFPreviewWindow(app.root, snapshot_provider=app.build_preview_snapshot)
+    preview.win.update_idletasks()
+    help_win = BSFGeometryHelpWindow(app.root, snapshot_provider=app.build_bsf_geometry_help_snapshot)
+    help_win.win.update_idletasks()
+    titles = f"{preview.win.title()} | {help_win.win.title()}"
+    preview.win.destroy()
+    help_win.win.destroy()
+    return titles
+
+
+def _export_h(app) -> str:
+    code = app.output_text.get("1.0", "end").strip()
+    if not code:
+        raise RuntimeError("Kein NC-Code fuer .H-Export.")
+    path = os.path.join(tempfile.gettempdir(), "nc_generator_smoke.H")
+    with open(path, "w", encoding="cp1252", errors="replace") as handle:
+        handle.write(code + "\n")
+    return path
+
+
+def _file_dialogs_cancel(app) -> int:
+    """Dateidialoge Abbrechen: kein Tcl-Fehler, kein State-Wechsel."""
+    from tkinter import filedialog
+
+    cancelled: List[str] = []
+
+    def _cancel(**kwargs) -> str:
+        cancelled.append(str(kwargs.get("title") or kwargs.get("defaultextension") or "dialog"))
+        return ""
+
+    filedialog.asksaveasfilename = _cancel  # type: ignore[method-assign]
+    filedialog.askopenfilename = _cancel  # type: ignore[method-assign]
+
+    app.mode_var.set(MODE_BGF)
+    app.on_mode_change(None)
+    app.coord_save_list()
+    app.coord_load_list()
+    app.coord_export_csv()
+    app.coord_import_csv()
+    app.export_to_h()
+
+    app.mode_var.set(MODE_BSF)
+    app.on_mode_change(None)
+    app.bsf_coord_save_list()
+    app.bsf_coord_load_list()
+    app.bsf_coord_export_csv()
+    app.bsf_coord_import_csv()
+
+    if len(cancelled) < 9:
+        raise RuntimeError(f"Dateidialoge unerwartet: {cancelled}")
+    return len(cancelled)

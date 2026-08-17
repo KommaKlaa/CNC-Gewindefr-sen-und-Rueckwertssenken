@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Nuitka / Packaging
+build/
+dist/
+*.build/
+*.dist/
+*.onefile-build/
+nuitka-crash-report.xml
+
+# Release artefacts (CHANGELOG.md and build_tools stay versioned)
+release/
+
+# Local user / machine project files (not fixtures)
+*.H
+*.bgf.json
+*.bsf.json
+*.csv
