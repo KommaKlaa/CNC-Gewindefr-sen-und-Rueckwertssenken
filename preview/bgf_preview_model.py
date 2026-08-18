@@ -60,7 +60,7 @@ class PreviewSnapshot:
     bsf_sink_depth: Optional[float] = None
     bsf_clearance: Optional[float] = None
     bsf_tool_designation: str = ""
-    bsf_holder_to_edge_mm: Optional[float] = None
+    bsf_measurement_face_to_edge_mm: Optional[float] = None
     bsf_reference_z: Optional[float] = None
 
 
@@ -227,7 +227,7 @@ def build_bsf_preview_from_xy(
     sink_depth: Optional[float] = None,
     clearance: Optional[float] = None,
     tool_designation: str = "",
-    holder_to_edge_mm: Optional[float] = None,
+    measurement_face_to_edge_mm: Optional[float] = None,
     circle_info: Optional[str] = None,
     extra_warnings: Optional[List[str]] = None,
     reference_z: Optional[float] = None,
@@ -310,6 +310,6 @@ def build_bsf_preview_from_xy(
         bsf_sink_depth=sink_depth,
         bsf_clearance=clearance,
         bsf_tool_designation=tool_designation,
-        bsf_holder_to_edge_mm=holder_to_edge_mm,
+        bsf_measurement_face_to_edge_mm=measurement_face_to_edge_mm,
         bsf_reference_z=reference_z,
     )

@@ -10,8 +10,9 @@ from bsf_blade import apply_workpiece_reference_z, calculate_workpiece_bsf_z, pa
 from heule_bsf_tools import (
     BSFToolProfile,
     MEASUREMENT_LABEL,
+    MEASUREMENT_OFFSET_DIRECTION,
     profile_by_designation,
-    programmed_holder_z_for_cutting_edge,
+    programmed_measurement_face_z_for_cutting_edge,
 )
 
 Z0_BOTTOM_LABEL = "Z0 ist Unterkante Bund"
@@ -81,8 +82,8 @@ class BSFGeometryHelpSnapshot:
     reference_z: Optional[float]
     workpiece_z_sink_finish: Optional[float]
     workpiece_z_clearance: Optional[float]
-    programmed_holder_z_sink_finish: Optional[float]
-    programmed_holder_z_clearance: Optional[float]
+    programmed_measurement_face_z_sink_finish: Optional[float]
+    programmed_measurement_face_z_clearance: Optional[float]
     nc_blocked: bool
     notes: List[str] = field(default_factory=list)
 
@@ -139,8 +140,8 @@ def build_bsf_geometry_help_snapshot(
         workpiece_sink = wp["z_sink_finish"]
         workpiece_clear = wp["z_clearance"]
         if tool_profile is not None:
-            programmed_sink = programmed_holder_z_for_cutting_edge(workpiece_sink, tool_profile)
-            programmed_clear = programmed_holder_z_for_cutting_edge(workpiece_clear, tool_profile)
+            programmed_sink = programmed_measurement_face_z_for_cutting_edge(workpiece_sink, tool_profile)
+            programmed_clear = programmed_measurement_face_z_for_cutting_edge(workpiece_clear, tool_profile)
 
     nc_blocked = (not workpiece_ok) or tool_profile is None or reference_z is None
 
@@ -154,8 +155,8 @@ def build_bsf_geometry_help_snapshot(
         reference_z=reference_z,
         workpiece_z_sink_finish=workpiece_sink,
         workpiece_z_clearance=workpiece_clear,
-        programmed_holder_z_sink_finish=programmed_sink,
-        programmed_holder_z_clearance=programmed_clear,
+        programmed_measurement_face_z_sink_finish=programmed_sink,
+        programmed_measurement_face_z_clearance=programmed_clear,
         nc_blocked=nc_blocked,
         notes=notes,
     )
@@ -165,7 +166,7 @@ def format_help_info(snapshot: BSFGeometryHelpSnapshot) -> str:
     z0_short = "Unterkante Bund" if snapshot.z0_is_flange_bottom else "Oberkante Bund"
     designation = snapshot.tool_profile.designation if snapshot.tool_profile is not None else "—"
     offset = (
-        fmt_mm(snapshot.tool_profile.holder_to_cutting_edge_mm)
+        fmt_mm(snapshot.tool_profile.measurement_face_to_cutting_edge_mm)
         if snapshot.tool_profile is not None
         else "—"
     )
@@ -185,11 +186,12 @@ def format_help_info(snapshot: BSFGeometryHelpSnapshot) -> str:
         "Werkzeug\n"
         f"HEULE Werkzeug          {designation}\n"
         f"Vermessung              {MEASUREMENT_LABEL}\n"
-        f"Halter -> Schneide      {offset}\n"
+        f"Vermessfläche -> Schneide {offset}\n"
+        f"Richtung                {MEASUREMENT_OFFSET_DIRECTION}\n"
         f"Aktivierungsdrehzahl    {speed}\n\n"
         "NC\n"
         f"Schneidenziel Finish    {fmt_axis_z(snapshot.workpiece_z_sink_finish)}\n"
         f"Schneidenziel Freifahrt {fmt_axis_z(snapshot.workpiece_z_clearance)}\n"
-        f"Halter-Z Finish         {fmt_axis_z(snapshot.programmed_holder_z_sink_finish)}\n"
-        f"Halter-Z Freifahrt      {fmt_axis_z(snapshot.programmed_holder_z_clearance)}"
+        f"Vermesspunkt-Z Finish   {fmt_axis_z(snapshot.programmed_measurement_face_z_sink_finish)}\n"
+        f"Vermesspunkt-Z Freifahrt {fmt_axis_z(snapshot.programmed_measurement_face_z_clearance)}"
     )

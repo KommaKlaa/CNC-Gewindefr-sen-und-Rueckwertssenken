@@ -7,7 +7,7 @@ from tkinter import ttk
 from typing import Callable, Dict, Optional
 
 from app_paths import apply_window_icon
-from heule_bsf_tools import MEASUREMENT_LABEL
+from heule_bsf_tools import MEASUREMENT_DETAIL_LABEL, MEASUREMENT_LABEL, MEASUREMENT_OFFSET_DIRECTION
 from help_views.bsf_geometry_model import (
     BSFGeometryHelpSnapshot,
     fmt_axis_z,
@@ -95,13 +95,14 @@ class BSFGeometryHelpWindow:
             ("sec_tool", "Werkzeug", True),
             ("tool", "HEULE Werkzeug", False),
             ("meas", "Vermessung", False),
-            ("offset", "Halter -> Schneide", False),
+            ("offset", "Vermessfläche -> Schneide", False),
+            ("direction", "Richtung", False),
             ("speed", "Aktivierungsdrehzahl", False),
             ("sec_nc", "NC", True),
             ("finish_z", "Schneidenziel Finish", False),
             ("clear_z", "Schneidenziel Freifahrt", False),
-            ("holder_finish", "Halter-Z Finish", False),
-            ("holder_clear", "Halter-Z Freifahrt", False),
+            ("meas_finish", "Vermesspunkt-Z Finish", False),
+            ("meas_clear", "Vermesspunkt-Z Freifahrt", False),
         ]
         for r, (key, caption, section) in enumerate(rows):
             if section:
@@ -146,8 +147,9 @@ class BSFGeometryHelpWindow:
         self._info_vars["tool"].set(s.tool_profile.designation if s.tool_profile is not None else "—")
         self._info_vars["meas"].set(MEASUREMENT_LABEL)
         self._info_vars["offset"].set(
-            fmt_mm(s.tool_profile.holder_to_cutting_edge_mm) if s.tool_profile is not None else "—"
+            fmt_mm(s.tool_profile.measurement_face_to_cutting_edge_mm) if s.tool_profile is not None else "—"
         )
+        self._info_vars["direction"].set(MEASUREMENT_OFFSET_DIRECTION)
         self._info_vars["speed"].set(
             "—"
             if s.tool_profile is None or s.tool_profile.activation_speed_rpm is None
@@ -155,8 +157,8 @@ class BSFGeometryHelpWindow:
         )
         self._info_vars["finish_z"].set(fmt_axis_z(s.workpiece_z_sink_finish))
         self._info_vars["clear_z"].set(fmt_axis_z(s.workpiece_z_clearance))
-        self._info_vars["holder_finish"].set(fmt_axis_z(s.programmed_holder_z_sink_finish))
-        self._info_vars["holder_clear"].set(fmt_axis_z(s.programmed_holder_z_clearance))
+        self._info_vars["meas_finish"].set(fmt_axis_z(s.programmed_measurement_face_z_sink_finish))
+        self._info_vars["meas_clear"].set(fmt_axis_z(s.programmed_measurement_face_z_clearance))
 
     def info_dump(self) -> str:
         return format_help_info(self.snapshot) if self.snapshot is not None else ""
@@ -253,22 +255,32 @@ class BSFGeometryHelpWindow:
         assert s is not None
         c = self.detail_canvas
         cx = w * 0.42
-        y_meas = 55
-        y_cut = h - 55
+        y_cut, y_meas = tool_detail_canvas_layout(h)
         label = s.tool_profile.designation if s.tool_profile is not None else "Kein Werkzeug"
-        offset = "—" if s.tool_profile is None else fmt_mm(s.tool_profile.holder_to_cutting_edge_mm)
+        offset = "—" if s.tool_profile is None else fmt_mm(s.tool_profile.measurement_face_to_cutting_edge_mm)
 
-        c.create_text(cx, 16, text=label, fill=_COLOR_TEXT, font=("Segoe UI", 8, "bold"), tags=("tool_label",))
-        c.create_line(cx, y_meas, cx, y_cut, fill=_COLOR_TOOL, width=14, tags=("tool",))
-        c.create_line(cx - 36, y_meas, cx + 36, y_meas, fill=_COLOR_MEAS, width=3, tags=("measurement_face",))
-        c.create_text(cx + 48, y_meas - 8, text="WERKZEUGVERMESSUNG", fill=_COLOR_MEAS, anchor="w", font=("Segoe UI", 8, "bold"), tags=("measurement_face",))
-        c.create_text(cx + 48, y_meas + 8, text=MEASUREMENT_LABEL, fill=_COLOR_MEAS, anchor="w", font=("Segoe UI", 8), tags=("measurement_face",))
+        c.create_text(cx, 14, text="+Z → Spindel", fill=_COLOR_FINISH, font=("Segoe UI", 8, "bold"), tags=("z_dir",))
+        c.create_text(cx, 28, text=label, fill=_COLOR_TEXT, font=("Segoe UI", 8, "bold"), tags=("tool_label",))
+        c.create_line(cx, y_cut, cx, y_meas, fill=_COLOR_TOOL, width=14, tags=("tool",))
 
         c.create_line(cx - 24, y_cut, cx + 24, y_cut, fill=_COLOR_FINISH, width=3, tags=("finish_edge",))
         c.create_text(cx + 48, y_cut, text="FERTIGSCHNEIDE", fill=_COLOR_FINISH, anchor="w", font=("Segoe UI", 8, "bold"), tags=("finish_edge",))
 
-        c.create_line(68, y_meas, 68, y_cut, fill=_COLOR_TEXT, arrow=tk.BOTH, tags=("offset_dim",))
-        c.create_text(58, (y_meas + y_cut) / 2, text=offset.replace(" mm", "\nmm"), fill=_COLOR_TEXT, anchor="e", font=("Segoe UI", 8, "bold"), tags=("offset_dim",))
+        c.create_line(cx - 36, y_meas, cx + 36, y_meas, fill=_COLOR_MEAS, width=3, tags=("measurement_face",))
+        c.create_text(cx + 48, y_meas - 8, text="WERKZEUGVERMESSUNG", fill=_COLOR_MEAS, anchor="w", font=("Segoe UI", 8, "bold"), tags=("measurement_face",))
+        c.create_text(cx + 48, y_meas + 8, text=MEASUREMENT_DETAIL_LABEL, fill=_COLOR_MEAS, anchor="w", font=("Segoe UI", 8), tags=("measurement_face",))
+        c.create_text(cx + 48, y_meas + 22, text="Messdose", fill=_COLOR_AXIS, anchor="w", font=("Segoe UI", 7), tags=("measurement_face",))
+
+        c.create_line(68, y_cut, 68, y_meas, fill=_COLOR_TEXT, arrow=tk.BOTH, tags=("offset_dim",))
+        c.create_text(58, (y_cut + y_meas) / 2, text=offset.replace(" mm", "\nmm"), fill=_COLOR_TEXT, anchor="e", font=("Segoe UI", 8, "bold"), tags=("offset_dim",))
+        c.create_text(58, y_cut - 10, text=MEASUREMENT_OFFSET_DIRECTION, fill=_COLOR_AXIS, anchor="e", font=("Segoe UI", 7), tags=("offset_dir",))
+
+
+def tool_detail_canvas_layout(canvas_height: float) -> tuple[float, float]:
+    """Liefert Canvas-Y fuer Schneide (oben) und Vermessflaeche (unten)."""
+    y_cut = 55.0
+    y_meas = canvas_height - 55.0
+    return y_cut, y_meas
 
 
 def open_bsf_geometry_help_window(master: tk.Misc, *, snapshot_provider: Callable[[], BSFGeometryHelpSnapshot]):

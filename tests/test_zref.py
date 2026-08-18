@@ -28,8 +28,8 @@ from coordinates.bsf_list_document import build_bsf_document, document_to_dict, 
 from help_views.bsf_geometry_model import build_bsf_geometry_help_snapshot
 from heule_bsf_tools import (
     BSF_TOOL_PROFILES,
-    cutting_edge_z_from_holder_z,
-    programmed_holder_z_for_cutting_edge,
+    cutting_edge_z_from_measurement_face_z,
+    programmed_measurement_face_z_for_cutting_edge,
 )
 from ui import MODE_BGF, MODE_BSF
 
@@ -188,9 +188,9 @@ class TestBsfReferenceShiftDomain(unittest.TestCase):
         for tool in (TOOL_C, TOOL_E):
             for ref in (0.0, 20.0, -20.0):
                 target = apply_workpiece_reference_z(wp, ref)["z_sink_finish"]
-                holder = programmed_holder_z_for_cutting_edge(target, tool)
+                measurement_face = programmed_measurement_face_z_for_cutting_edge(target, tool)
                 self.assertAlmostEqual(
-                    cutting_edge_z_from_holder_z(holder, tool),
+                    cutting_edge_z_from_measurement_face_z(measurement_face, tool),
                     target,
                 )
 
@@ -391,8 +391,8 @@ class TestBsfGuiZref(unittest.TestCase):
             za = _workpiece_z_map(a)["Senken mit 50 Prozent"]
             zb = _workpiece_z_map(b)["Senken mit 50 Prozent"]
             target = 38.0 + float(ref)
-            self.assertAlmostEqual(cutting_edge_z_from_holder_z(za, TOOL_C), target, places=3)
-            self.assertAlmostEqual(cutting_edge_z_from_holder_z(zb, TOOL_E), target, places=3)
+            self.assertAlmostEqual(cutting_edge_z_from_measurement_face_z(za, TOOL_C), target, places=3)
+            self.assertAlmostEqual(cutting_edge_z_from_measurement_face_z(zb, TOOL_E), target, places=3)
 
     def test_safe_z_high_reference_blocked(self):
         import tkinter.messagebox as mb
@@ -584,8 +584,8 @@ class TestBsfHelpZref(unittest.TestCase):
             reference_z_text="20",
             tool_designation=TOOL_C.designation,
         )
-        self.assertAlmostEqual(snap0.programmed_holder_z_sink_finish, 29.45, places=3)
-        self.assertAlmostEqual(snap20.programmed_holder_z_sink_finish, 49.45, places=3)
+        self.assertAlmostEqual(snap0.programmed_measurement_face_z_sink_finish, 29.45, places=3)
+        self.assertAlmostEqual(snap20.programmed_measurement_face_z_sink_finish, 49.45, places=3)
         self.assertEqual(snap20.reference_z, 20.0)
         from help_views.bsf_geometry_model import format_help_info
 
@@ -599,8 +599,8 @@ class TestSafeZGateDomain(unittest.TestCase):
     def test_high_reference_blocked(self):
         wp = calculate_workpiece_bsf_z(18, 38, 23, z0_is_flange_bottom=True)
         programmed = {
-            "z_sink_finish": programmed_holder_z_for_cutting_edge(158.0, TOOL_C),
-            "z_clearance": programmed_holder_z_for_cutting_edge(97.0, TOOL_C),
+            "z_sink_finish": programmed_measurement_face_z_for_cutting_edge(158.0, TOOL_C),
+            "z_clearance": programmed_measurement_face_z_for_cutting_edge(97.0, TOOL_C),
         }
         err = validate_bsf_safe_z_against_reference(
             100.0,
@@ -615,8 +615,8 @@ class TestSafeZGateDomain(unittest.TestCase):
 
     def test_default_allowed(self):
         programmed = {
-            "z_sink_finish": programmed_holder_z_for_cutting_edge(38.0, TOOL_C),
-            "z_clearance": programmed_holder_z_for_cutting_edge(-23.0, TOOL_C),
+            "z_sink_finish": programmed_measurement_face_z_for_cutting_edge(38.0, TOOL_C),
+            "z_clearance": programmed_measurement_face_z_for_cutting_edge(-23.0, TOOL_C),
         }
         err = validate_bsf_safe_z_against_reference(
             100.0,

@@ -150,7 +150,7 @@ class TestDocsAndManifest(unittest.TestCase):
         self.assertIn(APP_VERSION, readme)
         self.assertIn(EXE_FILENAME, readme)
         self.assertIn("zusammenbleiben", readme)
-        self.assertIn("Halter-Messfläche", readme)
+        self.assertIn("Werkzeug-Stirnfläche", readme)
         self.assertIn("8.550 mm", readme)
         self.assertIn("11.400 mm", readme)
         self.assertIn(APP_AUTHOR, info)

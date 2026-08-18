@@ -78,7 +78,7 @@ class TestBsfCoordGui(unittest.TestCase):
         snap = self.app.build_bsf_preview_snapshot()
         self.assertTrue(snap.nc_allowed)
         self.assertEqual(snap.bsf_tool_designation, TOOL_C.designation)
-        self.assertEqual(snap.bsf_holder_to_edge_mm, 8.55)
+        self.assertEqual(snap.bsf_measurement_face_to_edge_mm, 8.55)
 
     def test_csv_import_does_not_change_selected_tool(self):
         before = self.app.bsf_tool_profile_var.get()

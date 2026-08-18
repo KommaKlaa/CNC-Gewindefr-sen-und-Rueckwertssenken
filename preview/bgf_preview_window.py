@@ -219,13 +219,14 @@ class BGFPreviewWindow:
         if s.process_kind == "BSF":
             self.win.title("BSF Positionsvorschau")
             tool = s.bsf_tool_designation or "Bitte HEULE-Werkzeug auswaehlen"
-            offset = "—" if s.bsf_holder_to_edge_mm is None else f"{s.bsf_holder_to_edge_mm:.3f} mm"
+            offset = "—" if s.bsf_measurement_face_to_edge_mm is None else f"{s.bsf_measurement_face_to_edge_mm:.3f} mm"
             extra = f"  |  {s.circle_info}" if s.circle_info else ""
             self.header_tool.config(text="HEULE BSF")
             self.header_prog.config(
                 text=(
                     f"Werkzeug T{s.tool_number}    Positionen: {len(s.points)}    "
-                    f"HEULE: {tool}    Vermessung: Halter    Halter -> Schneide: {offset}{extra}"
+                    f"HEULE: {tool}    Vermessung: Werkzeug-Stirnfläche    "
+                    f"Vermessfläche -> Schneide: {offset}{extra}"
                 )
             )
         else:
@@ -483,7 +484,7 @@ class BGFPreviewWindow:
         sink = "—" if s is None or s.bsf_sink_depth is None else f"{s.bsf_sink_depth:.3f} mm"
         clr = "—" if s is None or s.bsf_clearance is None else f"{s.bsf_clearance:.3f} mm"
         tool = "—" if s is None or not s.bsf_tool_designation else s.bsf_tool_designation
-        offset = "—" if s is None or s.bsf_holder_to_edge_mm is None else f"{s.bsf_holder_to_edge_mm:.3f} mm"
+        offset = "—" if s is None or s.bsf_measurement_face_to_edge_mm is None else f"{s.bsf_measurement_face_to_edge_mm:.3f} mm"
         nc = "NC freigegeben" if p.ok_for_nc else "NC blockiert"
         ov = f"\nXY-Ueberlappung: {p.xy_overlap_count} Positionen" if p.xy_overlap_count > 1 else ""
         dup = "\nDoppelte XY-Position: ja" if p.is_duplicate_xyz else ""
@@ -497,8 +498,8 @@ class BGFPreviewWindow:
             f"Senk-Fertigmaß: {sink}\n"
             f"Freifahrtiefe: {clr}\n"
             f"Bezug Z: {'—' if s is None or s.bsf_reference_z is None else f'{s.bsf_reference_z:.3f} mm'}\n"
-            f"Vermessung: Halter\n"
-            f"Halter -> Schneide: {offset}\n\n"
+            f"Vermessung: Werkzeug-Stirnfläche\n"
+            f"Vermessfläche -> Schneide: {offset}\n\n"
             f"Status:\n{nc}"
             f"{dup}{ov}"
         )

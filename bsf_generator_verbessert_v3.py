@@ -82,14 +82,13 @@ from heule_bsf_tools import (
     MEASUREMENT_LABEL,
     MEASUREMENT_MODEL,
     MEASUREMENT_NC_COMMENT,
+    MEASUREMENT_OFFSET_DIRECTION,
     TOOL_SELECTION_REQUIRED,
-    apply_holder_offset,
-    cutting_edge_z_from_holder_z,
+    apply_measurement_face_offset,
     ordered_tool_profiles,
     profile_by_designation,
     profile_by_key,
     profile_options,
-    programmed_holder_z_for_cutting_edge,
 )
 from coordinates.bsf_list_document import (
     APPROACH_FEED_FACTOR_FULL,
@@ -549,9 +548,9 @@ class BSFGeneratorGUI:
             row=2, column=1, sticky=tk.W, padx=(4, 16), pady=2
         )
 
-        ttk.Label(frame, text="Abstand Halter -> Schneide:").grid(row=2, column=2, sticky=tk.W, pady=2)
-        self.bsf_holder_to_edge_value = tk.StringVar(value="—")
-        ttk.Label(frame, textvariable=self.bsf_holder_to_edge_value).grid(
+        ttk.Label(frame, text="Abstand Vermessfläche -> Schneide:").grid(row=2, column=2, sticky=tk.W, pady=2)
+        self.bsf_measurement_face_to_edge_value = tk.StringVar(value="—")
+        ttk.Label(frame, textvariable=self.bsf_measurement_face_to_edge_value).grid(
             row=2, column=3, sticky=tk.W, padx=(4, 16), pady=2
         )
 
@@ -563,7 +562,7 @@ class BSFGeneratorGUI:
 
         ttk.Label(
             frame,
-            text="Werkzeuglaenge an der Halter-Messflaeche vermessen; Offset kommt aus dem HEULE-Profil.",
+            text="Werkzeuglaenge an der unteren Werkzeug-Stirnflaeche vermessen; Offset kommt aus dem HEULE-Profil.",
             font=("Segoe UI", 8),
         ).grid(row=4, column=0, columnspan=6, sticky=tk.W, pady=(4, 0))
         self.on_bsf_tool_profile_change()
@@ -1167,7 +1166,7 @@ class BSFGeneratorGUI:
                 bsf_sink_depth=sink,
                 bsf_clearance=clearance,
                 bsf_tool_designation=tool_profile.designation if tool_profile is not None else "",
-                bsf_holder_to_edge_mm=tool_profile.holder_to_cutting_edge_mm if tool_profile is not None else None,
+                bsf_measurement_face_to_edge_mm=tool_profile.measurement_face_to_cutting_edge_mm if tool_profile is not None else None,
                 bsf_reference_z=reference_z,
                 circle_info=circle_info,
                 nc_allowed=False,
@@ -1185,7 +1184,7 @@ class BSFGeneratorGUI:
             sink_depth=sink,
             clearance=clearance,
             tool_designation=tool_profile.designation if tool_profile is not None else "",
-            holder_to_edge_mm=tool_profile.holder_to_cutting_edge_mm if tool_profile is not None else None,
+            measurement_face_to_edge_mm=tool_profile.measurement_face_to_cutting_edge_mm if tool_profile is not None else None,
             circle_info=circle_info,
             reference_z=reference_z,
         )
@@ -2604,16 +2603,16 @@ class BSFGeneratorGUI:
         profile = self.get_selected_bsf_tool_profile(show_error=False)
         self.bsf_measurement_value.set(MEASUREMENT_LABEL)
         if profile is None:
-            self.bsf_holder_to_edge_value.set("—")
+            self.bsf_measurement_face_to_edge_value.set("—")
             self.bsf_activation_speed_value.set("—")
             if "blade_thickness" in self.entries:
                 self.entries["blade_thickness"].delete(0, tk.END)
             self.blade_measurement_var.set(MEASUREMENT_LABEL)
             return
-        self.bsf_holder_to_edge_value.set(f"{profile.holder_to_cutting_edge_mm:.3f} mm")
+        self.bsf_measurement_face_to_edge_value.set(f"{profile.measurement_face_to_cutting_edge_mm:.3f} mm")
         if "blade_thickness" in self.entries:
             self.entries["blade_thickness"].delete(0, tk.END)
-            self.entries["blade_thickness"].insert(0, f"{profile.holder_to_cutting_edge_mm:.3f}")
+            self.entries["blade_thickness"].insert(0, f"{profile.measurement_face_to_cutting_edge_mm:.3f}")
         self.blade_measurement_var.set(MEASUREMENT_LABEL)
         if profile.activation_speed_rpm is None:
             self.bsf_activation_speed_value.set("—")
@@ -2999,7 +2998,7 @@ class BSFGeneratorGUI:
             return None
 
         z0_is_flange_bottom = self.z0_var.get() == "Z0 ist Unterkante Bund"
-        # Relativgeometrie unveraendert; danach absolute Schneiden-Ziele, dann Halter-Z programmieren.
+        # Relativgeometrie unveraendert; danach absolute Schneiden-Ziele, dann Vermesspunkt-Z programmieren.
         workpiece_relative = calculate_workpiece_bsf_z(
             bund_thickness,
             sink_depth,
@@ -3007,7 +3006,7 @@ class BSFGeneratorGUI:
             z0_is_flange_bottom=z0_is_flange_bottom,
         )
         target_cutting_edge_z = apply_workpiece_reference_z(workpiece_relative, reference_z)
-        programmed = apply_holder_offset(target_cutting_edge_z, tool_profile)
+        programmed = apply_measurement_face_offset(target_cutting_edge_z, tool_profile)
         programmed["tool_profile"] = tool_profile
         programmed["target_cutting_edge_z"] = target_cutting_edge_z
         programmed["reference_z"] = reference_z
@@ -3058,7 +3057,8 @@ class BSFGeneratorGUI:
         code.append("; HEULE BSF Rueckwaertssenken - Nullpunkt/Z-Werte vor Einsatz pruefen")
         code.append(f"; WERKZEUG: {blade.designation}")
         code.append(f"; VERMESSUNG: {MEASUREMENT_NC_COMMENT}")
-        code.append(f"; HALTER -> SCHNEIDE: {blade.holder_to_cutting_edge_mm:.3f} MM")
+        code.append(f"; VERMESSFLAECHE -> SCHNEIDE: +{blade.measurement_face_to_cutting_edge_mm:.3f} MM")
+        code.append(f"; OFFSET-RICHTUNG: {MEASUREMENT_OFFSET_DIRECTION.upper()} ZUR SPINDEL")
         if blade.activation_speed_rpm is not None:
             code.append(f"; HEULE AKTIVIERUNGSDREHZAHL: {blade.activation_speed_rpm:d} U/MIN")
         self.add_block_form(code, common, bgf_mode=False, z_origin=z_values["reference_z"])

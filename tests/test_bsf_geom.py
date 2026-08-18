@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unittest
 
 import bsf_generator_verbessert_v3 as gen
@@ -7,8 +8,8 @@ from bsf_blade import apply_workpiece_reference_z, calculate_workpiece_bsf_z, sp
 from heule_bsf_tools import (
     BSF_TOOL_PROFILES,
     TOOL_SELECTION_REQUIRED,
-    cutting_edge_z_from_holder_z,
-    programmed_holder_z_for_cutting_edge,
+    cutting_edge_z_from_measurement_face_z,
+    programmed_measurement_face_z_for_cutting_edge,
 )
 from ui import MODE_BSF
 
@@ -16,19 +17,31 @@ TOOL_C = BSF_TOOL_PROFILES["BSF_C_1000_050_10_5_23"]
 TOOL_E = BSF_TOOL_PROFILES["BSF_E_1350_050_16_5_14"]
 
 
+def _motion_lines(code: str) -> list[str]:
+    return [line for line in code.splitlines() if line.startswith("L ") or line.startswith("TOOL CALL")]
+
+
 class TestToolProfiles(unittest.TestCase):
     def test_catalog_metadata(self):
         self.assertEqual(TOOL_C.designation, "BSF-C-1000/050-10.5-23")
-        self.assertEqual(TOOL_C.holder_to_cutting_edge_mm, 8.55)
+        self.assertEqual(TOOL_C.measurement_face_to_cutting_edge_mm, 8.55)
         self.assertEqual(TOOL_C.activation_speed_rpm, 2000)
         self.assertEqual(TOOL_E.designation, "BSF-E-1350/050-16.5-14")
-        self.assertEqual(TOOL_E.holder_to_cutting_edge_mm, 11.40)
+        self.assertEqual(TOOL_E.measurement_face_to_cutting_edge_mm, 11.40)
         self.assertEqual(TOOL_E.activation_speed_rpm, 1500)
 
-    def test_holder_cutting_edge_invariant(self):
+    def test_measurement_face_cutting_edge_invariant(self):
         for tool, target in ((TOOL_C, 38.0), (TOOL_E, 38.0), (TOOL_C, 58.0), (TOOL_E, 18.0)):
-            holder = programmed_holder_z_for_cutting_edge(target, tool)
-            self.assertAlmostEqual(cutting_edge_z_from_holder_z(holder, tool), target, places=4)
+            measurement_face = programmed_measurement_face_z_for_cutting_edge(target, tool)
+            self.assertAlmostEqual(cutting_edge_z_from_measurement_face_z(measurement_face, tool), target, places=4)
+
+    def test_tool_c_measurement_face_example(self):
+        measurement_face_z = 29.45
+        self.assertAlmostEqual(
+            cutting_edge_z_from_measurement_face_z(measurement_face_z, TOOL_C),
+            38.0,
+            places=3,
+        )
 
 
 class TestGuiBsfToolarch(unittest.TestCase):
@@ -86,12 +99,14 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("; WERKZEUG: BSF-C-1000/050-10.5-23", code)
-        self.assertIn("; VERMESSUNG: HALTER", code)
-        self.assertIn("; HALTER -> SCHNEIDE: 8.550 MM", code)
+        self.assertIn("; VERMESSUNG: WERKZEUG-STIRNFLAECHE", code)
+        self.assertIn("; VERMESSFLAECHE -> SCHNEIDE: +8.550 MM", code)
+        self.assertIn("; OFFSET-RICHTUNG: +Z ZUR SPINDEL", code)
         self.assertIn("; HEULE AKTIVIERUNGSDREHZAHL: 2000 U/MIN", code)
         self.assertNotIn("SCHWERTDICKE", code)
+        self.assertNotIn("; HALTER -> SCHNEIDE", code)
 
-    def test_reference_z_and_tool_c_generate_holder_z(self):
+    def test_reference_z_and_tool_c_generate_measurement_face_z(self):
         self.app.bsf_tool_profile_var.set(TOOL_C.designation)
         self.app.on_bsf_tool_profile_change()
         self.app.entries["bsf_reference_z"].delete(0, "end")
@@ -102,7 +117,7 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.assertIn("L Z+21.0000 R0 FMAX S2000 M3 ; Spindel einschalten", code)
         self.assertIn("TOOL CALL 8 Z S800", code)
 
-    def test_reference_z_and_tool_e_generate_holder_z(self):
+    def test_reference_z_and_tool_e_generate_measurement_face_z(self):
         self.app.bsf_tool_profile_var.set(TOOL_E.designation)
         self.app.on_bsf_tool_profile_change()
         self.app.generate_bsf_code()
@@ -111,6 +126,17 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.assertIn("L Z+1.0000 R0 FMAX S1500 M3 ; Spindel einschalten", code)
         self.assertIn("; HEULE AKTIVIERUNGSDREHZAHL: 1500 U/MIN", code)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", code)
+
+    def test_nc_motion_unchanged_except_header_comments(self):
+        self.app.bsf_tool_profile_var.set(TOOL_C.designation)
+        self.app.on_bsf_tool_profile_change()
+        self.app.generate_bsf_code()
+        code = self.app.output_text.get("1.0", "end")
+        motion = _motion_lines(code)
+        self.assertIn("L Z+29.4500 R0 F30 ; Senken mit 50 Prozent Vorschub", motion)
+        self.assertIn("L Z+1.0000 R0 FMAX S2000 M3 ; Spindel einschalten", motion)
+        comment_motion = [line for line in motion if not line.startswith(";")]
+        self.assertTrue(all(re.match(r"^(L |TOOL CALL)", line) for line in comment_motion))
 
     def test_tool_switch_changes_activation_speed(self):
         self.app.bsf_tool_profile_var.set(TOOL_C.designation)
