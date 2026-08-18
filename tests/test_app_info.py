@@ -33,7 +33,7 @@ from ui.about import _safe_open, open_about_window
 class TestAppInfo(unittest.TestCase):
     def test_canonical_product_name(self):
         self.assertEqual(APP_NAME, "NC-Code Generator")
-        self.assertEqual(APP_VERSION, "0.1.1")
+        self.assertEqual(APP_VERSION, "0.1.2")
         self.assertEqual(APP_AUTHOR, "Jens Behm")
         self.assertEqual(APP_WEBSITE, "behm-it.de")
         self.assertEqual(APP_WEBSITE_URL, "https://behm-it.de")
@@ -52,8 +52,8 @@ class TestAppInfo(unittest.TestCase):
 
     def test_windows_version_from_semver(self):
         self.assertEqual(derive_windows_version("0.1.0"), "0.1.0.0")
-        self.assertEqual(WINDOWS_FILE_VERSION, "0.1.1.0")
-        self.assertEqual(WINDOWS_PRODUCT_VERSION, "0.1.1.0")
+        self.assertEqual(WINDOWS_FILE_VERSION, "0.1.2.0")
+        self.assertEqual(WINDOWS_PRODUCT_VERSION, "0.1.2.0")
         self.assertEqual(WINDOWS_FILE_VERSION, WINDOWS_PRODUCT_VERSION)
 
     def test_windows_version_rejects_free_strings(self):
@@ -84,6 +84,9 @@ class TestAboutWindow(unittest.TestCase):
             self.assertIn(APP_WEBSITE, blob)
             self.assertIn(APP_EMAIL, blob)
             self.assertIn(APP_COPYRIGHT, blob)
+            self.assertIn("HEULE", blob)
+            self.assertIn("CERATIZIT", blob)
+            self.assertIn("Keine Verbindung oder Herstellerfreigabe", blob)
             self.assertFalse(self._has_entry(win))
             win.destroy()
         finally:

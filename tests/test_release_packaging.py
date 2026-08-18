@@ -55,7 +55,7 @@ class TestReleaseNameAndArch(unittest.TestCase):
         self.assertEqual(python_architecture(), "x64")
         self.assertEqual(
             release_folder_name(APP_VERSION, windows_platform_tag("x64")),
-            "NC-Code-Generator_0.1.1_Windows_x64",
+            f"NC-Code-Generator_{APP_VERSION}_Windows_x64",
         )
 
 
@@ -80,11 +80,11 @@ class TestSha256AndLayout(unittest.TestCase):
 
     def test_zip_single_top_level(self):
         with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp) / "NC-Code-Generator_0.1.1_Windows_x64"
+            folder = Path(tmp) / f"NC-Code-Generator_{APP_VERSION}_Windows_x64"
             folder.mkdir()
             (folder / "NC-Code-Generator.exe").write_bytes(b"fake")
             (folder / "README.txt").write_text("hi", encoding="utf-8")
-            zip_path = Path(tmp) / "NC-Code-Generator_0.1.1_Windows_x64.zip"
+            zip_path = Path(tmp) / f"NC-Code-Generator_{APP_VERSION}_Windows_x64.zip"
             create_zip(folder, zip_path, folder.name)
             assert_zip_top_level(zip_path, folder.name)
             with zipfile.ZipFile(zip_path) as archive:

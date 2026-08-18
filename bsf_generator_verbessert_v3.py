@@ -99,6 +99,7 @@ from coordinates.bsf_list_document import (
 from app_paths import apply_window_icon
 from app_info import APP_NAME
 from runtime_smoke import schedule_runtime_smoke_if_requested
+from safety_notice import ensure_startup_safety_notice, show_safety_notice
 from nc_programmer import ProgrammerError, normalize_programmer, programmer_comment_line
 from ui.about import open_about_window as show_about_dialog
 from ui import MODE_BGF, MODE_BSF, POSITION_LABELS_BGF, POSITION_LABELS_BSF, ScrollableFrame
@@ -276,6 +277,9 @@ class BSFGeneratorGUI:
         self.root.geometry("1080x900")
         self.root.minsize(1000, 780)
         apply_window_icon(self.root)
+        if not ensure_startup_safety_notice(self.root):
+            self.root.destroy()
+            raise SystemExit(0)
 
         self.bg_color = "#f0f4f8"
         self.accent_color = "#3498db"
@@ -355,6 +359,10 @@ class BSFGeneratorGUI:
     def _create_menubar(self) -> None:
         menubar = tk.Menu(self.root)
         help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(
+            label="Sicherheits- und Nutzungshinweis",
+            command=lambda: show_safety_notice(self.root),
+        )
         help_menu.add_command(label="Info", command=self.open_about_window)
         menubar.add_cascade(label="Hilfe", menu=help_menu)
         self.root.config(menu=menubar)

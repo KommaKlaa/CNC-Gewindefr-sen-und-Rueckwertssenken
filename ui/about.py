@@ -20,6 +20,7 @@ from app_info import (
     APP_WEBSITE_URL,
 )
 from app_paths import APP_ICON_PNG_REL, apply_window_icon, resource_path
+from safety_notice import TRADEMARK_NOTICE_TEXT
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,16 @@ def open_about_window(master: tk.Misc) -> tk.Toplevel:
     )
     mail.pack(pady=(2, 12))
     mail.bind("<Button-1>", lambda _e: _safe_open(APP_MAILTO))
+
+    tk.Label(
+        body,
+        text=TRADEMARK_NOTICE_TEXT,
+        justify=tk.CENTER,
+        fg=_COLOR_MUTED,
+        bg=_COLOR_BG,
+        font=("Segoe UI", 9),
+        wraplength=420,
+    ).pack(pady=(0, 10))
 
     tk.Label(body, text=APP_COPYRIGHT, fg=_COLOR_MUTED, bg=_COLOR_BG, font=("Segoe UI", 9)).pack(
         pady=(0, 14)

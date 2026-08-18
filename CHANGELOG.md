@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.1.2 – 2026-08-18
+
+### Geändert
+
+- HEULE-BSF-Werkzeugvermessung fachlich eindeutig dargestellt.
+- Werkzeuglänge wird an der unteren Werkzeug-Stirnfläche auf der Messdose vermessen.
+- Die ausgeklappte Schneide liegt vom Vermesspunkt in +Z-Richtung zur Spindel.
+- GUI, Hilfsgrafik und NC-Kommentare verwenden die neue eindeutige Vermesspunkt-Terminologie.
+
+### Sicherheit
+
+- Neuer Sicherheits- und Nutzungshinweis beim ersten Start einer Programmversion.
+- NC-Programme müssen vor Maschineneinsatz geprüft werden.
+- Simulation, Einzelsatz bzw. Trockenlauf werden empfohlen.
+- Verwendung der erzeugten Programme erfolgt eigenverantwortlich.
+- Hinweis jederzeit über Hilfe erreichbar.
+
+### Marken
+
+- HEULE und CERATIZIT werden als Marken bzw. eingetragene Marken ihrer jeweiligen Rechteinhaber kenntlich gemacht.
+- Keine Verbindung, Freigabe oder Zertifizierung durch HEULE oder CERATIZIT wird behauptet.
+
+### Unverändert
+
+- BSF Bewegungs-NC
+- BGF Bewegungs-NC
+- ZREF
+- HEULE ToolProfile-Werte
+- Aktivierungssequenz
+- M-Funktionen
+- Prozessdrehzahlen
+
 ## 0.1.1 – 2026-08-18
 
 ### Neu

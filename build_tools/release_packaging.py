@@ -49,6 +49,7 @@ APP_SOURCE_RELATIVE = (
     "app_info.py",
     "app_paths.py",
     "runtime_smoke.py",
+    "safety_notice.py",
     "nc_programmer.py",
     "bsf_generator_verbessert_v3.py",
     "bsf_blade.py",
