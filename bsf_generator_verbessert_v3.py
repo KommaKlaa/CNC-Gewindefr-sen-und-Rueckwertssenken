@@ -72,14 +72,24 @@ from bgf_depth import (
 from bgf_depth_reference import references_for_size
 from bgf_depth_approvals import approved_max_thread_depth
 from bsf_blade import (
-    MEASUREMENT_LABELS,
-    MEASUREMENT_NC_COMMENTS,
-    MEASUREMENT_PLACEHOLDER,
-    apply_blade_offset,
-    blade_reference_offset,
+    apply_workpiece_reference_z,
     calculate_workpiece_bsf_z,
-    parse_blade_thickness,
-    parse_measurement_reference,
+    parse_reference_z,
+    spindle_on_z,
+    validate_bsf_safe_z_against_reference,
+)
+from heule_bsf_tools import (
+    MEASUREMENT_LABEL,
+    MEASUREMENT_MODEL,
+    MEASUREMENT_NC_COMMENT,
+    TOOL_SELECTION_REQUIRED,
+    apply_holder_offset,
+    cutting_edge_z_from_holder_z,
+    ordered_tool_profiles,
+    profile_by_designation,
+    profile_by_key,
+    profile_options,
+    programmed_holder_z_for_cutting_edge,
 )
 from coordinates.bsf_list_document import (
     APPROACH_FEED_FACTOR_FULL,
@@ -466,7 +476,7 @@ class BSFGeneratorGUI:
         self.entries["approach_clearance"].grid(row=1, column=1, sticky=tk.W, padx=(4, 12), pady=2)
         ttk.Label(
             frame,
-            text="Anfahr-Z = Z Oberflaeche + Sicherheitsabstand",
+            text="Anfahr-Z = Bohrungsanfang Z + Sicherheitsabstand",
             font=("Segoe UI", 8),
         ).grid(row=1, column=2, columnspan=3, sticky=tk.W)
 
@@ -518,26 +528,45 @@ class BSFGeneratorGUI:
         self.entries["feed_rate"].insert(0, "60")
         self.entries["feed_rate"].grid(row=0, column=5, sticky=tk.W, padx=4, pady=2)
 
-        ttk.Label(frame, text="Schwertdicke axial [mm]:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.entries["blade_thickness"] = ttk.Entry(frame, width=10)
-        self.entries["blade_thickness"].grid(row=1, column=1, sticky=tk.W, padx=(4, 16), pady=2)
-
-        ttk.Label(frame, text="Werkzeuglaenge vermessen an:").grid(row=1, column=2, sticky=tk.W, pady=2)
-        self.blade_measurement_var = tk.StringVar(value=MEASUREMENT_PLACEHOLDER)
-        self.blade_measurement_combo = ttk.Combobox(
+        ttk.Label(frame, text="HEULE Werkzeug:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.bsf_tool_profile_var = tk.StringVar(value=TOOL_SELECTION_REQUIRED)
+        self.bsf_tool_profile_combo = ttk.Combobox(
             frame,
-            textvariable=self.blade_measurement_var,
-            values=(MEASUREMENT_PLACEHOLDER,) + tuple(MEASUREMENT_LABELS.values()),
+            textvariable=self.bsf_tool_profile_var,
+            values=profile_options(),
             state="readonly",
-            width=42,
+            width=34,
         )
-        self.blade_measurement_combo.grid(row=1, column=3, columnspan=3, sticky=tk.W, pady=2)
+        self.bsf_tool_profile_combo.grid(row=1, column=1, columnspan=3, sticky=tk.W, padx=(4, 16), pady=2)
+        self.bsf_tool_profile_combo.bind("<<ComboboxSelected>>", self.on_bsf_tool_profile_change)
+        self.blade_measurement_var = tk.StringVar(value=MEASUREMENT_LABEL)
+        self.blade_measurement_combo = ttk.Combobox(frame, textvariable=self.blade_measurement_var, values=(MEASUREMENT_LABEL,), state="readonly")
+        self.entries["blade_thickness"] = ttk.Entry(frame, width=10)
+
+        ttk.Label(frame, text="Vermessung:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.bsf_measurement_value = tk.StringVar(value=MEASUREMENT_LABEL)
+        ttk.Label(frame, textvariable=self.bsf_measurement_value).grid(
+            row=2, column=1, sticky=tk.W, padx=(4, 16), pady=2
+        )
+
+        ttk.Label(frame, text="Abstand Halter -> Schneide:").grid(row=2, column=2, sticky=tk.W, pady=2)
+        self.bsf_holder_to_edge_value = tk.StringVar(value="—")
+        ttk.Label(frame, textvariable=self.bsf_holder_to_edge_value).grid(
+            row=2, column=3, sticky=tk.W, padx=(4, 16), pady=2
+        )
+
+        ttk.Label(frame, text="HEULE Aktivierungsdrehzahl:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.bsf_activation_speed_value = tk.StringVar(value="—")
+        ttk.Label(frame, textvariable=self.bsf_activation_speed_value).grid(
+            row=3, column=1, sticky=tk.W, padx=(4, 16), pady=2
+        )
 
         ttk.Label(
             frame,
-            text="Die Auswahl muss der tatsaechlichen Werkzeugvermessung in der Werkzeugtabelle entsprechen.",
+            text="Werkzeuglaenge an der Halter-Messflaeche vermessen; Offset kommt aus dem HEULE-Profil.",
             font=("Segoe UI", 8),
-        ).grid(row=2, column=0, columnspan=6, sticky=tk.W, pady=(4, 0))
+        ).grid(row=4, column=0, columnspan=6, sticky=tk.W, pady=(4, 0))
+        self.on_bsf_tool_profile_change()
 
     def create_bsf_processing_panel(self) -> None:
         """HEULE BSF Bearbeitungsparameter (Werkstueck: Bund, Senkmass, Z0, Freifahrt).
@@ -561,7 +590,7 @@ class BSFGeneratorGUI:
             entry.grid(row=row, column=col + 1, sticky=tk.W, pady=2, padx=(0, 12))
             self.entries[key] = entry
 
-        ttk.Label(frame, text="Z0-Definition:").grid(row=1, column=2, sticky=tk.W, pady=2)
+        ttk.Label(frame, text="Bezugsebene:").grid(row=1, column=2, sticky=tk.W, pady=2)
         self.z0_var = tk.StringVar(value="Z0 ist Unterkante Bund")
         ttk.Combobox(
             frame,
@@ -571,17 +600,27 @@ class BSFGeneratorGUI:
             width=24,
         ).grid(row=1, column=3, columnspan=2, sticky=tk.W, pady=2)
 
+        ttk.Label(frame, text="Z-Lage Bezugsebene [mm]:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.entries["bsf_reference_z"] = ttk.Entry(frame, width=12)
+        self.entries["bsf_reference_z"].insert(0, "0")
+        self.entries["bsf_reference_z"].grid(row=2, column=1, sticky=tk.W, pady=2, padx=(0, 12))
+        ttk.Label(
+            frame,
+            text="Absolute Z-Koordinate der Werkstueckflaeche, an der die Bohrung beginnt.",
+            font=("Segoe UI", 8),
+        ).grid(row=2, column=2, columnspan=4, sticky=tk.W, pady=2)
+
         self.reduce_approach_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             frame,
             text="Anschnitt-Vorschub reduzieren (50%)",
             variable=self.reduce_approach_var,
-        ).grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
+        ).grid(row=3, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
         ttk.Button(
             frame,
             text="Hilfsgrafik Senken",
             command=self.open_bsf_geometry_help,
-        ).grid(row=2, column=4, columnspan=2, sticky=tk.E, pady=(6, 0))
+        ).grid(row=3, column=4, columnspan=2, sticky=tk.E, pady=(6, 0))
 
     def create_bsf_machine_panel(self) -> None:
         frame = ttk.LabelFrame(self.params_host, text="HEULE BSF Maschinenoptionen", padding=8)
@@ -663,6 +702,14 @@ class BSFGeneratorGUI:
             entry.grid(row=row, column=col + 1, sticky=tk.W, pady=2, padx=(0, 12))
             self.entries[key] = entry
 
+        self._circle_surface_z_label = ttk.Label(self.circle_frame, text="Bohrungsanfang Z [mm]:")
+        self._circle_surface_z_label.grid(row=1, column=4, sticky=tk.W, pady=2, padx=(0, 4))
+        self.entries["circle_surface_z"] = ttk.Entry(self.circle_frame, width=12)
+        self.entries["circle_surface_z"].insert(0, "0")
+        self.entries["circle_surface_z"].grid(row=1, column=5, sticky=tk.W, pady=2, padx=(0, 12))
+        self.entries["circle_surface_z"].bind("<KeyRelease>", self.on_bgf_depth_input_change)
+        self.entries["circle_surface_z"].bind("<FocusOut>", self.on_bgf_depth_input_change)
+
         # --- Einzelposition ---
         self.single_pos_frame = ttk.LabelFrame(pos_frame, text="Einzelposition", padding=6)
         ttk.Label(self.single_pos_frame, text="X:").grid(row=0, column=0, sticky=tk.W)
@@ -674,7 +721,7 @@ class BSFGeneratorGUI:
         self.entries["single_y"].insert(0, "0")
         self.entries["single_y"].grid(row=0, column=3, sticky=tk.W, padx=(4, 12))
 
-        self._single_surface_z_label = ttk.Label(self.single_pos_frame, text="Z Oberflaeche:")
+        self._single_surface_z_label = ttk.Label(self.single_pos_frame, text="Bohrungsanfang Z [mm]:")
         self._single_surface_z_label.grid(row=0, column=4, sticky=tk.W)
         self.entries["single_surface_z"] = ttk.Entry(self.single_pos_frame, width=12)
         self.entries["single_surface_z"].insert(0, "0")
@@ -704,7 +751,7 @@ class BSFGeneratorGUI:
             "nr": ("Nr.", 36),
             "x": ("X", 70),
             "y": ("Y", 70),
-            "sz": ("Z Oberflaeche", 90),
+            "sz": ("Bohrungsanfang Z", 110),
             "td": ("Gewindetiefe", 90),
             "ch": ("Kernloch Soll", 90),
             "status": ("Status", 160),
@@ -994,7 +1041,7 @@ class BSFGeneratorGUI:
                 BGFHelpPositionView(
                     x=_silent_float("center_x"),
                     y=_silent_float("center_y"),
-                    surface_z=0.0,
+                    surface_z=_silent_float("circle_surface_z"),
                     thread_depth=thread_depth if ok_td else None,
                     core_hole_depth=core_hole if ok_ch else None,
                 )
@@ -1014,14 +1061,13 @@ class BSFGeneratorGUI:
     def build_bsf_geometry_help_snapshot(self):
         from help_views.bsf_geometry_model import build_bsf_geometry_help_snapshot
 
-        blade_entry = self.entries.get("blade_thickness")
         return build_bsf_geometry_help_snapshot(
             bund_text=self.entries["bund_thickness"].get() if "bund_thickness" in self.entries else "",
             sink_text=self.entries["sink_depth"].get() if "sink_depth" in self.entries else "",
             clearance_text=self.entries["clearance"].get() if "clearance" in self.entries else "",
-            blade_text=blade_entry.get() if blade_entry is not None else "",
-            measurement_label=self.blade_measurement_var.get(),
             z0_label=self.z0_var.get(),
+            reference_z_text=self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else "0",
+            tool_designation=self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
         )
 
     def build_preview_snapshot(self):
@@ -1057,15 +1103,9 @@ class BSFGeneratorGUI:
         bund = _silent_float("bund_thickness")
         sink = _silent_float("sink_depth")
         clearance = _silent_float("clearance")
-
-        blade_ok, blade_thickness, _ = parse_blade_thickness(
-            self.entries.get("blade_thickness").get() if self.entries.get("blade_thickness") else ""
-        )
-        meas_ok, meas_ref, _ = parse_measurement_reference(self.blade_measurement_var.get())
-        measurement_label = self.blade_measurement_var.get() if meas_ok else ""
-        if measurement_label == MEASUREMENT_PLACEHOLDER:
-            measurement_label = ""
-            meas_ok = False
+        reference_z = _silent_float("bsf_reference_z")
+        tool_profile = self.get_selected_bsf_tool_profile(show_error=False)
+        tool_ok = tool_profile is not None
 
         mode = self.get_position_mode()
         mode_label = self.position_mode_var.get()
@@ -1109,7 +1149,7 @@ class BSFGeneratorGUI:
         list_ok = True
         if mode == PositionMode.COORDINATES and not positions:
             list_ok = False
-        nc_allowed = bool(blade_ok and meas_ok and list_ok and positions)
+        nc_allowed = bool(tool_ok and list_ok and positions)
 
         if not positions:
             return PreviewSnapshot(
@@ -1126,8 +1166,9 @@ class BSFGeneratorGUI:
                 bsf_bund_thickness=bund,
                 bsf_sink_depth=sink,
                 bsf_clearance=clearance,
-                bsf_blade_thickness=blade_thickness if blade_ok else None,
-                bsf_measurement_label=measurement_label,
+                bsf_tool_designation=tool_profile.designation if tool_profile is not None else "",
+                bsf_holder_to_edge_mm=tool_profile.holder_to_cutting_edge_mm if tool_profile is not None else None,
+                bsf_reference_z=reference_z,
                 circle_info=circle_info,
                 nc_allowed=False,
             )
@@ -1143,9 +1184,10 @@ class BSFGeneratorGUI:
             bund_thickness=bund,
             sink_depth=sink,
             clearance=clearance,
-            blade_thickness=blade_thickness if blade_ok else None,
-            measurement_label=measurement_label,
+            tool_designation=tool_profile.designation if tool_profile is not None else "",
+            holder_to_edge_mm=tool_profile.holder_to_cutting_edge_mm if tool_profile is not None else None,
             circle_info=circle_info,
+            reference_z=reference_z,
         )
 
     def build_bgf_preview_snapshot(self):
@@ -1232,6 +1274,9 @@ class BSFGeneratorGUI:
                 and diameter > 0
                 and count > 0
             ):
+                circle_sz = _silent_float("circle_surface_z")
+                if circle_sz is None:
+                    circle_sz = 0.0
                 positions = build_circle_positions_for_preview(
                     center_x=center_x,
                     center_y=center_y,
@@ -1240,7 +1285,7 @@ class BSFGeneratorGUI:
                     start_angle_deg=start_angle,
                     thread_depth=thread_depth,
                     core_hole_depth=core_hole if ok_ch else None,
-                    surface_z=0.0,
+                    surface_z=circle_sz,
                 )
                 circle_info = (
                     f"Ø{diameter:g}  {count} Positionen  Start {start_angle:g}°  "
@@ -1349,6 +1394,12 @@ class BSFGeneratorGUI:
 
         if mode == PositionMode.CIRCLE:
             show_grid(self.circle_frame, row=1, column=0, columnspan=6, sticky=tk.EW, pady=(8, 0))
+            if self.is_bgf_mode():
+                self._circle_surface_z_label.grid(row=1, column=4, sticky=tk.W, pady=2, padx=(0, 4))
+                self.entries["circle_surface_z"].grid(row=1, column=5, sticky=tk.W, pady=2, padx=(0, 12))
+            else:
+                self._circle_surface_z_label.grid_forget()
+                self.entries["circle_surface_z"].grid_forget()
         elif mode == PositionMode.SINGLE:
             show_grid(self.single_pos_frame, row=1, column=0, columnspan=6, sticky=tk.EW, pady=(8, 0))
             for key in ("single_x", "single_y", "single_surface_z"):
@@ -1630,14 +1681,9 @@ class BSFGeneratorGUI:
                 raise BSFDocumentError(f"{caption} muss eine ganze Zahl sein.")
             return int(value)
 
-        ok_blade, thickness, err_blade = parse_blade_thickness(
-            self.entries["blade_thickness"].get() if "blade_thickness" in self.entries else ""
-        )
-        if not ok_blade:
-            raise BSFDocumentError(err_blade or "Schwertdicke axial fehlt.")
-        ok_meas, meas_ref, err_meas = parse_measurement_reference(self.blade_measurement_var.get())
-        if not ok_meas:
-            raise BSFDocumentError(err_meas or "Vermessreferenz der Werkzeuglaenge fehlt.")
+        tool_profile = self.get_selected_bsf_tool_profile(show_error=False)
+        if tool_profile is None:
+            raise BSFDocumentError("HEULE_TOOL_SELECTION_REQUIRED")
 
         reduce_approach = bool(self.reduce_approach_var.get())
         try:
@@ -1650,11 +1696,11 @@ class BSFGeneratorGUI:
             blank_size=_entry_float("blank_size", "Rohteil-Kantenlaenge"),
             blank_height=_entry_float("blank_height", "Rohteil-Hoehe"),
             z_reference=z_reference_from_label(self.z0_var.get()),
+            reference_z=_entry_float("bsf_reference_z", "Z-Lage Bezugsebene"),
+            tool_profile_key=tool_profile.key,
             bund_thickness=_entry_float("bund_thickness", "Bund-Dicke"),
             sink_finish=_entry_float("sink_depth", "Senk-Fertigmaß"),
             clearance=_entry_float("clearance", "Freifahr-Tiefe"),
-            blade_thickness=thickness,
-            blade_measurement_reference=meas_ref,
             spindle_speed=_entry_int("spindle_speed", "Spindeldrehzahl"),
             feed=_entry_float("feed_rate", "Vorschub"),
             dwell_time=_entry_float("dwell_time", "Wartezeit"),
@@ -1689,8 +1735,8 @@ class BSFGeneratorGUI:
             "clearance": self.entries["clearance"].get(),
             "dwell": self.entries["dwell_time"].get(),
             "z0": self.z0_var.get(),
-            "blade": self.entries["blade_thickness"].get(),
-            "measurement": self.blade_measurement_var.get(),
+            "reference_z": self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else "0",
+            "tool_profile": self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
             "spindle": self.entries["spindle_speed"].get(),
             "feed": self.entries["feed_rate"].get(),
             "reduce": bool(self.reduce_approach_var.get()),
@@ -1715,8 +1761,9 @@ class BSFGeneratorGUI:
         self._set_entry_value("clearance", snapshot["clearance"])
         self._set_entry_value("dwell_time", snapshot["dwell"])
         self.z0_var.set(snapshot["z0"])
-        self._set_entry_value("blade_thickness", snapshot["blade"])
-        self.blade_measurement_var.set(snapshot["measurement"])
+        self._set_entry_value("bsf_reference_z", snapshot.get("reference_z", "0"))
+        self.bsf_tool_profile_var.set(snapshot.get("tool_profile", TOOL_SELECTION_REQUIRED))
+        self.on_bsf_tool_profile_change()
         self._set_entry_value("spindle_speed", snapshot["spindle"])
         self._set_entry_value("feed_rate", snapshot["feed"])
         self.reduce_approach_var.set(snapshot["reduce"])
@@ -1751,8 +1798,13 @@ class BSFGeneratorGUI:
         self._set_entry_value("clearance", f"{doc.clearance:g}")
         self._set_entry_value("dwell_time", f"{doc.dwell_time:g}")
         self.z0_var.set(doc.z0_label)
-        self._set_entry_value("blade_thickness", f"{doc.blade_thickness:g}")
-        self.blade_measurement_var.set(MEASUREMENT_LABELS[doc.blade_measurement_reference])
+        self._set_entry_value("bsf_reference_z", f"{doc.reference_z:g}")
+        if doc.tool_profile_key:
+            profile = profile_by_key(doc.tool_profile_key)
+            self.bsf_tool_profile_var.set(profile.designation if profile is not None else TOOL_SELECTION_REQUIRED)
+        else:
+            self.bsf_tool_profile_var.set(TOOL_SELECTION_REQUIRED)
+        self.on_bsf_tool_profile_change()
         self._set_entry_value("spindle_speed", str(doc.spindle_speed))
         self._set_entry_value("feed_rate", f"{doc.feed:g}")
         self.reduce_approach_var.set(bool(doc.reduce_approach))
@@ -2272,11 +2324,11 @@ class BSFGeneratorGUI:
         xy = self.get_single_xy()
         if xy is None:
             return None
-        surface_z = self.get_float_value("single_surface_z", "Z Oberflaeche")
+        surface_z = self.get_float_value("single_surface_z", "Bohrungsanfang Z")
         if surface_z is None:
             return None
         if not math.isfinite(surface_z) or not math.isfinite(xy[0]) or not math.isfinite(xy[1]):
-            messagebox.showerror("Fehler", "X/Y/Z Oberflaeche duerfen nicht NaN/Infinity sein.")
+            messagebox.showerror("Fehler", "X/Y/Bohrungsanfang Z duerfen nicht NaN/Infinity sein.")
             return None
         return xy[0], xy[1], surface_z
 
@@ -2345,12 +2397,46 @@ class BSFGeneratorGUI:
     def current_surface_z_for_depth_info(self) -> float:
         if not hasattr(self, "position_mode_var"):
             return 0.0
-        if self.get_position_mode() == PositionMode.SINGLE and "single_surface_z" in self.entries:
+        mode = self.get_position_mode()
+        key = None
+        if mode == PositionMode.SINGLE:
+            key = "single_surface_z"
+        elif mode == PositionMode.CIRCLE:
+            key = "circle_surface_z"
+        if key and key in self.entries:
             try:
-                return float(self.entries["single_surface_z"].get().replace(",", "."))
+                value = float(self.entries[key].get().replace(",", "."))
             except ValueError:
                 return 0.0
+            if math.isfinite(value):
+                return value
         return 0.0
+
+    def get_circle_surface_z(self) -> Optional[float]:
+        value = self.get_float_value("circle_surface_z", "Bohrungsanfang Z")
+        if value is None:
+            return None
+        if not math.isfinite(value):
+            messagebox.showerror("Fehler", "Bohrungsanfang Z darf nicht NaN/Infinity sein.")
+            return None
+        return value
+
+    def get_bsf_reference_z(self) -> Optional[float]:
+        ok, value, err = parse_reference_z(
+            self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else ""
+        )
+        if not ok:
+            messagebox.showerror("Z-Lage Bezugsebene", err)
+            return None
+        return value
+
+    def get_selected_bsf_tool_profile(self, *, show_error: bool = True):
+        profile = profile_by_designation(
+            self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else ""
+        )
+        if profile is None and show_error:
+            messagebox.showerror("HEULE Werkzeug", "HEULE_TOOL_SELECTION_REQUIRED")
+        return profile
 
     def evaluate_current_bgf_depth(self):
         policy = self.get_bgf_depth_policy()
@@ -2469,6 +2555,17 @@ class BSFGeneratorGUI:
         )
         return False
 
+    def _ensure_bgf_safe_above_approach(self, surface_z: float, clearance: float, common: dict) -> bool:
+        approach = above_surface(surface_z, clearance)
+        if common["safe_z"] < approach or common["end_safe_z"] < approach:
+            messagebox.showerror(
+                "Sicherheits-Z",
+                "Sicherheits-Z muss oberhalb der Anfahrhoehe liegen "
+                f"(Anfahr-Z {fmt_axis('Z', approach)}).",
+            )
+            return False
+        return True
+
     def load_bgf_values(self) -> None:
         data = BGF_DATA[self.bgf_size_var.get()]
         values = {
@@ -2502,6 +2599,26 @@ class BSFGeneratorGUI:
     def on_m_deactivate_change(self, event) -> None:
         state = "normal" if self.m_deactivate_var.get() == "Eigener M-Befehl" else "disabled"
         self.m_deactivate_custom.config(state=state)
+
+    def on_bsf_tool_profile_change(self, event=None) -> None:
+        profile = self.get_selected_bsf_tool_profile(show_error=False)
+        self.bsf_measurement_value.set(MEASUREMENT_LABEL)
+        if profile is None:
+            self.bsf_holder_to_edge_value.set("—")
+            self.bsf_activation_speed_value.set("—")
+            if "blade_thickness" in self.entries:
+                self.entries["blade_thickness"].delete(0, tk.END)
+            self.blade_measurement_var.set(MEASUREMENT_LABEL)
+            return
+        self.bsf_holder_to_edge_value.set(f"{profile.holder_to_cutting_edge_mm:.3f} mm")
+        if "blade_thickness" in self.entries:
+            self.entries["blade_thickness"].delete(0, tk.END)
+            self.entries["blade_thickness"].insert(0, f"{profile.holder_to_cutting_edge_mm:.3f}")
+        self.blade_measurement_var.set(MEASUREMENT_LABEL)
+        if profile.activation_speed_rpm is None:
+            self.bsf_activation_speed_value.set("—")
+        else:
+            self.bsf_activation_speed_value.set(f"{profile.activation_speed_rpm:d} U/min")
 
     # ------------------------------------------------------------------
     # Eingabe / Validierung
@@ -2603,15 +2720,16 @@ class BSFGeneratorGUI:
         else:
             self.generate_bsf_code()
 
-    def add_block_form(self, code: List[str], common: dict, bgf_mode: bool) -> None:
+    def add_block_form(self, code: List[str], common: dict, bgf_mode: bool, z_origin: float = 0.0) -> None:
         half = common["blank_size"] / 2.0
+        height = abs(common["blank_height"])
         if bgf_mode:
-            z_min, z_max = -abs(common["blank_height"]), 0.0
+            z_min, z_max = z_origin - height, z_origin
         else:
             if self.z0_var.get() == "Z0 ist Unterkante Bund":
-                z_min, z_max = 0.0, abs(common["blank_height"])
+                z_min, z_max = z_origin, z_origin + height
             else:
-                z_min, z_max = -abs(common["blank_height"]), 0.0
+                z_min, z_max = z_origin - height, z_origin
 
         code.append(f"BLK FORM 0.1 Z X{-half:.0f} Y{-half:.0f} {fmt_axis('Z', z_min)}")
         code.append(f"BLK FORM 0.2 X{half:.0f} Y{half:.0f} {fmt_axis('Z', z_max)}")
@@ -2672,7 +2790,24 @@ class BSFGeneratorGUI:
             if depth_info.depth_mode_label:
                 code.append(f"; TIEFENMODUS: {depth_info.depth_mode_label.upper()}")
         code.append("; ACHTUNG: Nullpunkt, Werkzeugdaten, M-Funktionen und Simulation pruefen")
-        self.add_block_form(code, common, bgf_mode=True)
+        z_origin = 0.0
+        circle_surface_z = None
+        single_pos = None
+        if position_mode == PositionMode.SINGLE:
+            single_pos = self.get_single_position()
+            if single_pos is None:
+                return
+            z_origin = single_pos[2]
+            if not self._ensure_bgf_safe_above_approach(z_origin, clearance, common):
+                return
+        elif position_mode == PositionMode.CIRCLE:
+            circle_surface_z = self.get_circle_surface_z()
+            if circle_surface_z is None:
+                return
+            z_origin = circle_surface_z
+            if not self._ensure_bgf_safe_above_approach(z_origin, clearance, common):
+                return
+        self.add_block_form(code, common, bgf_mode=True, z_origin=z_origin)
 
         if self.output_tool_def_var.get():
             code.append(f"TOOL DEF {common['tool_num']} L+0.0000 R+{data.radius:.4f} ; Laenge pruefen/anpassen")
@@ -2682,10 +2817,9 @@ class BSFGeneratorGUI:
         code.append("")
 
         if position_mode == PositionMode.SINGLE:
-            pos = self.get_single_position()
-            if pos is None:
+            if single_pos is None:
                 return
-            x, y, surface_z = pos
+            x, y, surface_z = single_pos
             depth_ev = self.evaluate_current_bgf_depth()
             if not depth_ev.ok_for_nc or depth_ev.nc_drill_depth is None or depth_ev.nc_mill_start_depth is None:
                 self.ensure_bgf_depth_allows_nc()
@@ -2754,6 +2888,8 @@ class BSFGeneratorGUI:
             )
             code.append(f"END PGM {program_name} MM")
         else:
+            if circle_surface_z is None:
+                return
             depth_ev = self.evaluate_current_bgf_depth()
             if not depth_ev.ok_for_nc or depth_ev.nc_drill_depth is None or depth_ev.nc_mill_start_depth is None:
                 self.ensure_bgf_depth_allows_nc()
@@ -2767,14 +2903,14 @@ class BSFGeneratorGUI:
             code.append("")
             code.append("LBL 100 ; Unterprogramm BGF auf aktueller XY-Position")
             code.append(
-                f"L {fmt_axis('Z', above_surface(0.0, clearance))} R0 FMAX M13 ; "
+                f"L {fmt_axis('Z', above_surface(circle_surface_z, clearance))} R0 FMAX M13 ; "
                 "XY bleibt auf aktueller Teilkreisposition"
             )
             code.extend(
                 self.get_bgf_sequence(
                     data,
                     common["tool_num"],
-                    surface_z=0.0,
+                    surface_z=circle_surface_z,
                     approach_clearance=clearance,
                     drill_depth=depth_ev.nc_drill_depth,
                     mill_start_depth=depth_ev.nc_mill_start_depth,
@@ -2847,29 +2983,6 @@ class BSFGeneratorGUI:
     # HEULE BSF-Code
     # ------------------------------------------------------------------
 
-    def get_bsf_blade_geometry(self):
-        """Fail-closed: ohne gueltige Schwertgeometrie kein BSF-NC."""
-        ok_t, thickness, err_t = parse_blade_thickness(
-            self.entries.get("blade_thickness").get() if self.entries.get("blade_thickness") else ""
-        )
-        if not ok_t:
-            messagebox.showerror("HEULE BSF Schwert", err_t)
-            return None
-        ok_r, reference, err_r = parse_measurement_reference(self.blade_measurement_var.get())
-        if not ok_r:
-            messagebox.showerror("HEULE BSF Schwert", err_r)
-            return None
-        try:
-            offset = blade_reference_offset(thickness, reference)
-        except ValueError as exc:
-            messagebox.showerror("HEULE BSF Schwert", str(exc))
-            return None
-        return {
-            "thickness": thickness,
-            "measurement_reference": reference,
-            "offset": offset,
-        }
-
     def calculate_bsf_z_values(self):
         bund_thickness = self.get_float_value("bund_thickness", "Bund-Dicke")
         sink_depth = self.get_float_value("sink_depth", "Senk-Fertigmaß")
@@ -2877,20 +2990,30 @@ class BSFGeneratorGUI:
         if any(v is None for v in [bund_thickness, sink_depth, clearance]):
             return None
 
-        blade = self.get_bsf_blade_geometry()
-        if blade is None:
+        tool_profile = self.get_selected_bsf_tool_profile()
+        if tool_profile is None:
             return None
 
-        # Werkstueck-Z unveraendert; Offset nur auf Werkzeugreferenz-Z.
-        workpiece_z = calculate_workpiece_bsf_z(
+        reference_z = self.get_bsf_reference_z()
+        if reference_z is None:
+            return None
+
+        z0_is_flange_bottom = self.z0_var.get() == "Z0 ist Unterkante Bund"
+        # Relativgeometrie unveraendert; danach absolute Schneiden-Ziele, dann Halter-Z programmieren.
+        workpiece_relative = calculate_workpiece_bsf_z(
             bund_thickness,
             sink_depth,
             clearance,
-            z0_is_flange_bottom=(self.z0_var.get() == "Z0 ist Unterkante Bund"),
+            z0_is_flange_bottom=z0_is_flange_bottom,
         )
-        programmed = apply_blade_offset(workpiece_z, blade["offset"])
-        programmed["blade"] = blade
-        programmed["workpiece_z"] = workpiece_z
+        target_cutting_edge_z = apply_workpiece_reference_z(workpiece_relative, reference_z)
+        programmed = apply_holder_offset(target_cutting_edge_z, tool_profile)
+        programmed["tool_profile"] = tool_profile
+        programmed["target_cutting_edge_z"] = target_cutting_edge_z
+        programmed["reference_z"] = reference_z
+        programmed["spindle_on_z"] = spindle_on_z(reference_z)
+        programmed["bund_thickness"] = bund_thickness
+        programmed["z0_is_flange_bottom"] = z0_is_flange_bottom
         return programmed
 
     def generate_bsf_code(self) -> None:
@@ -2909,10 +3032,23 @@ class BSFGeneratorGUI:
         if not z_values:
             return
 
+        safe_err = validate_bsf_safe_z_against_reference(
+            common["safe_z"],
+            common["end_safe_z"],
+            z_values,
+            reference_z=z_values["reference_z"],
+            bund_thickness=z_values["bund_thickness"],
+            z0_is_flange_bottom=z_values["z0_is_flange_bottom"],
+            reduce_approach=bool(self.reduce_approach_var.get()),
+        )
+        if safe_err:
+            messagebox.showerror("Sicherheits-Z", safe_err)
+            return
+
         program_name = clean_program_name(common["program_name"], "BSF_RUECKWAERTS")
         m_act, m_deact = self.get_m_commands()
         position_mode = self.get_position_mode()
-        blade = z_values["blade"]
+        blade = z_values["tool_profile"]
 
         code: List[str] = []
         code.append(f"BEGIN PGM {program_name} MM")
@@ -2920,12 +3056,12 @@ class BSFGeneratorGUI:
         if programmer_line:
             code.append(programmer_line)
         code.append("; HEULE BSF Rueckwaertssenken - Nullpunkt/Z-Werte vor Einsatz pruefen")
-        code.append(f"; SCHWERTDICKE AXIAL: {blade['thickness']:.4f} MM")
-        code.append(
-            "; WERKZEUG VERMESSEN AN: "
-            f"{MEASUREMENT_NC_COMMENTS[blade['measurement_reference']]}"
-        )
-        self.add_block_form(code, common, bgf_mode=False)
+        code.append(f"; WERKZEUG: {blade.designation}")
+        code.append(f"; VERMESSUNG: {MEASUREMENT_NC_COMMENT}")
+        code.append(f"; HALTER -> SCHNEIDE: {blade.holder_to_cutting_edge_mm:.3f} MM")
+        if blade.activation_speed_rpm is not None:
+            code.append(f"; HEULE AKTIVIERUNGSDREHZAHL: {blade.activation_speed_rpm:d} U/MIN")
+        self.add_block_form(code, common, bgf_mode=False, z_origin=z_values["reference_z"])
         code.append(f"TOOL CALL {tool_num} Z S{spindle_speed}")
         code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX")
         code.append("")
@@ -2937,14 +3073,32 @@ class BSFGeneratorGUI:
             x, y = xy
             code.append("; --- EINZELPOSITION ---")
             code.append(f"L {fmt_axis('X', x)} {fmt_axis('Y', y)} {fmt_axis('Z', common['safe_z'])} R0 FMAX")
-            code.extend(self.get_bsf_sequence(z_values, feed_rate, dwell_time, m_act, m_deact, common))
+            code.extend(
+                self.get_bsf_sequence(
+                    z_values,
+                    feed_rate,
+                    dwell_time,
+                    m_act,
+                    m_deact,
+                    common,
+                    activation_speed_rpm=blade.activation_speed_rpm,
+                )
+            )
             code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX M30")
             code.append(f"END PGM {program_name} MM")
         elif position_mode == PositionMode.COORDINATES:
             positions = self._validated_bsf_coord_positions()
             if positions is None:
                 return
-            sequence = self.get_bsf_sequence(z_values, feed_rate, dwell_time, m_act, m_deact, common)
+            sequence = self.get_bsf_sequence(
+                z_values,
+                feed_rate,
+                dwell_time,
+                m_act,
+                m_deact,
+                common,
+                activation_speed_rpm=blade.activation_speed_rpm,
+            )
             code.extend(
                 emit_bsf_coordinate_program_body(
                     positions,
@@ -2962,18 +3116,45 @@ class BSFGeneratorGUI:
             code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX M30")
             code.append("")
             code.append("LBL 100 ; Unterprogramm BSF auf aktueller XY-Position")
-            code.extend(self.get_bsf_sequence(z_values, feed_rate, dwell_time, m_act, m_deact, common))
+            code.extend(
+                self.get_bsf_sequence(
+                    z_values,
+                    feed_rate,
+                    dwell_time,
+                    m_act,
+                    m_deact,
+                    common,
+                    activation_speed_rpm=blade.activation_speed_rpm,
+                )
+            )
             code.append("LBL 0")
             code.append(f"END PGM {program_name} MM")
 
         self.set_output(code)
 
-    def get_bsf_sequence(self, z_values, feed_rate: float, dwell_time: float, m_act: str, m_deact: str, common: dict) -> List[str]:
+    def get_bsf_sequence(
+        self,
+        z_values,
+        feed_rate: float,
+        dwell_time: float,
+        m_act: str,
+        m_deact: str,
+        common: dict,
+        *,
+        activation_speed_rpm: Optional[int] = None,
+    ) -> List[str]:
         lines: List[str] = []
         lines.append("M5 ; Spindel aus")
         lines.append(f"{m_deact} ; Druck/Kuehlung aus, Messer geschlossen")
         lines.append(f"L {fmt_axis('Z', z_values['z_clearance'])} R0 FMAX ; Durch den Bund tauchen")
-        lines.append("L Z+1.0000 R0 FMAX M3 ; Spindel einschalten")
+        reference_z = float(z_values.get("reference_z", 0.0))
+        spin_z = z_values.get("spindle_on_z", spindle_on_z(reference_z))
+        if activation_speed_rpm is not None:
+            lines.append(
+                f"L {fmt_axis('Z', spin_z)} R0 FMAX S{int(activation_speed_rpm)} M3 ; Spindel einschalten"
+            )
+        else:
+            lines.append(f"L {fmt_axis('Z', spin_z)} R0 FMAX M3 ; Spindel einschalten")
         lines.append(f"L {fmt_axis('Z', z_values['z_clearance'])} R0 FMAX {m_act} ; Messer unten aktivieren")
         lines.append("CYCL DEF 9.0 VERWEILZEIT")
         lines.append(f"CYCL DEF 9.1 V.ZEIT {dwell_time:.1f}")
@@ -3074,7 +3255,7 @@ class _BGFPositionDialog(simpledialog.Dialog):
         fields = [
             ("X [mm]", "x", "0"),
             ("Y [mm]", "y", "0"),
-            ("Z Oberflaeche [mm]", "sz", "0"),
+            ("Z Bohrungsanfang [mm]", "sz", "0"),
             ("Gewindetiefe [mm]", "td", f"{self.default_thread_depth:g}"),
             ("Kernlochtiefe Soll [mm] (optional)", "ch", ""),
         ]
@@ -3082,7 +3263,7 @@ class _BGFPositionDialog(simpledialog.Dialog):
             fields = [
                 ("X [mm]", "x", f"{self.initial.x:g}"),
                 ("Y [mm]", "y", f"{self.initial.y:g}"),
-                ("Z Oberflaeche [mm]", "sz", f"{self.initial.surface_z:g}"),
+                ("Z Bohrungsanfang [mm]", "sz", f"{self.initial.surface_z:g}"),
                 ("Gewindetiefe [mm]", "td", f"{self.initial.thread_depth:g}"),
                 (
                     "Kernlochtiefe Soll [mm] (optional)",
@@ -3115,7 +3296,7 @@ class _BGFPositionDialog(simpledialog.Dialog):
 
         x = parse_required("x", "X")
         y = parse_required("y", "Y")
-        sz = parse_required("sz", "Z Oberflaeche")
+        sz = parse_required("sz", "Bohrungsanfang Z")
         td = parse_required("td", "Gewindetiefe")
         if None in (x, y, sz, td):
             return False

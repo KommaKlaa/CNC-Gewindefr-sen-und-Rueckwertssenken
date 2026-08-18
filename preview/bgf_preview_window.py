@@ -218,14 +218,14 @@ class BGFPreviewWindow:
             return
         if s.process_kind == "BSF":
             self.win.title("BSF Positionsvorschau")
-            thick = "—" if s.bsf_blade_thickness is None else f"{s.bsf_blade_thickness:.3f} mm"
-            meas = s.bsf_measurement_label or "—"
+            tool = s.bsf_tool_designation or "Bitte HEULE-Werkzeug auswaehlen"
+            offset = "—" if s.bsf_holder_to_edge_mm is None else f"{s.bsf_holder_to_edge_mm:.3f} mm"
             extra = f"  |  {s.circle_info}" if s.circle_info else ""
             self.header_tool.config(text="HEULE BSF")
             self.header_prog.config(
                 text=(
                     f"Werkzeug T{s.tool_number}    Positionen: {len(s.points)}    "
-                    f"Schwertdicke: {thick}    Vermessung: {meas}{extra}"
+                    f"HEULE: {tool}    Vermessung: Halter    Halter -> Schneide: {offset}{extra}"
                 )
             )
         else:
@@ -464,7 +464,7 @@ class BGFPreviewWindow:
             f"Position {p.index}  {p.marker}\n\n"
             f"X:\n{_fmt3(p.x)} mm\n\n"
             f"Y:\n{_fmt3(p.y)} mm\n\n"
-            f"Z Oberflaeche:\n{_fmt3(p.surface_z)} mm\n\n"
+            f"Bohrungsanfang Z:\n{_fmt3(p.surface_z)} mm\n\n"
             f"Gewindetiefe:\n{p.thread_depth:.3f} mm\n\n"
             f"Kernlochtiefe:\n{core}\n\n"
             f"Tiefenmodus:\n{mode}\n\n"
@@ -482,8 +482,8 @@ class BGFPreviewWindow:
         bund = "—" if s is None or s.bsf_bund_thickness is None else f"{s.bsf_bund_thickness:.3f} mm"
         sink = "—" if s is None or s.bsf_sink_depth is None else f"{s.bsf_sink_depth:.3f} mm"
         clr = "—" if s is None or s.bsf_clearance is None else f"{s.bsf_clearance:.3f} mm"
-        blade = "—" if s is None or s.bsf_blade_thickness is None else f"{s.bsf_blade_thickness:.3f} mm"
-        meas = "—" if s is None or not s.bsf_measurement_label else s.bsf_measurement_label
+        tool = "—" if s is None or not s.bsf_tool_designation else s.bsf_tool_designation
+        offset = "—" if s is None or s.bsf_holder_to_edge_mm is None else f"{s.bsf_holder_to_edge_mm:.3f} mm"
         nc = "NC freigegeben" if p.ok_for_nc else "NC blockiert"
         ov = f"\nXY-Ueberlappung: {p.xy_overlap_count} Positionen" if p.xy_overlap_count > 1 else ""
         dup = "\nDoppelte XY-Position: ja" if p.is_duplicate_xyz else ""
@@ -492,11 +492,13 @@ class BGFPreviewWindow:
             f"X: {_fmt3(p.x)} mm\n"
             f"Y: {_fmt3(p.y)} mm\n\n"
             f"BSF:\n"
+            f"Werkzeug: {tool}\n"
             f"Bunddicke: {bund}\n"
             f"Senk-Fertigmaß: {sink}\n"
             f"Freifahrtiefe: {clr}\n"
-            f"Schwertdicke: {blade}\n"
-            f"Vermessreferenz: {meas}\n\n"
+            f"Bezug Z: {'—' if s is None or s.bsf_reference_z is None else f'{s.bsf_reference_z:.3f} mm'}\n"
+            f"Vermessung: Halter\n"
+            f"Halter -> Schneide: {offset}\n\n"
             f"Status:\n{nc}"
             f"{dup}{ov}"
         )

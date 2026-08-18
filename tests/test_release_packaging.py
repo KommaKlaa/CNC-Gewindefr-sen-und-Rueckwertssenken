@@ -42,7 +42,7 @@ class TestReleaseNameAndArch(unittest.TestCase):
         name = release_folder_name(APP_VERSION, "Windows_x64")
         self.assertEqual(name, f"NC-Code-Generator_{APP_VERSION}_Windows_x64")
         self.assertIn(APP_VERSION, name)
-        self.assertNotIn("0.1.1", name)
+        self.assertNotIn("0.1.0", name)
 
     def test_release_name_rejects_free_version_strings(self):
         with self.assertRaises(ValueError):
@@ -55,7 +55,7 @@ class TestReleaseNameAndArch(unittest.TestCase):
         self.assertEqual(python_architecture(), "x64")
         self.assertEqual(
             release_folder_name(APP_VERSION, windows_platform_tag("x64")),
-            "NC-Code-Generator_0.1.0_Windows_x64",
+            "NC-Code-Generator_0.1.1_Windows_x64",
         )
 
 
@@ -80,11 +80,11 @@ class TestSha256AndLayout(unittest.TestCase):
 
     def test_zip_single_top_level(self):
         with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp) / "NC-Code-Generator_0.1.0_Windows_x64"
+            folder = Path(tmp) / "NC-Code-Generator_0.1.1_Windows_x64"
             folder.mkdir()
             (folder / "NC-Code-Generator.exe").write_bytes(b"fake")
             (folder / "README.txt").write_text("hi", encoding="utf-8")
-            zip_path = Path(tmp) / "NC-Code-Generator_0.1.0_Windows_x64.zip"
+            zip_path = Path(tmp) / "NC-Code-Generator_0.1.1_Windows_x64.zip"
             create_zip(folder, zip_path, folder.name)
             assert_zip_top_level(zip_path, folder.name)
             with zipfile.ZipFile(zip_path) as archive:
@@ -150,13 +150,15 @@ class TestDocsAndManifest(unittest.TestCase):
         self.assertIn(APP_VERSION, readme)
         self.assertIn(EXE_FILENAME, readme)
         self.assertIn("zusammenbleiben", readme)
-        self.assertIn("noch ausstehend", readme)
+        self.assertIn("Halter-Messfläche", readme)
+        self.assertIn("8.550 mm", readme)
+        self.assertIn("11.400 mm", readme)
         self.assertIn(APP_AUTHOR, info)
         self.assertIn(APP_WEBSITE, info)
         self.assertIn(APP_EMAIL, info)
         self.assertIn("TECHNICAL RELEASE PACKAGE", info)
         self.assertIn("HEULE BSF REAL TOOL VALIDATION:", info)
-        self.assertIn("PENDING", info)
+        self.assertIn("YES", info)
         self.assertNotIn("HEULE real tool validation completed", readme.lower())
         self.assertNotIn("HEULE real tool validation completed", info.lower())
 
@@ -170,7 +172,7 @@ class TestDocsAndManifest(unittest.TestCase):
         self.assertEqual(payload["architecture"], "x64")
         self.assertEqual(payload["build_mode"], "standalone")
         self.assertIs(payload["console"], False)
-        self.assertIs(payload["bsf_real_tool_validated"], False)
+        self.assertIs(payload["bsf_real_tool_validated"], True)
         self.assertTrue(payload["source_fingerprint"])
         self.assertIn("build_timestamp_utc", payload)
         json.dumps(payload)

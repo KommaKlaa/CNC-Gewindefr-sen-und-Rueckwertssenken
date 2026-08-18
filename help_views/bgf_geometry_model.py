@@ -195,7 +195,7 @@ def build_bgf_geometry_help_snapshot(
     if thread_depth is None and not empty_list:
         notes.append("Gewindetiefe fehlt")
     if surface_z is None and not empty_list:
-        notes.append("Z Oberfläche fehlt")
+        notes.append("Bohrungsanfang Z fehlt")
 
     approach_z = None
     if surface_z is not None and approach_clearance is not None:
@@ -359,7 +359,7 @@ def format_help_info(snapshot: BGFGeometryHelpSnapshot) -> str:
         f"Artikel                  {snapshot.article_no}\n"
         f"Radius                   {fmt_radius(snapshot.radius)}\n\n"
         "Werkstück\n"
-        f"Z Oberfläche             {fmt_axis_z(snapshot.surface_z)}\n"
+        f"Bohrungsanfang Z         {fmt_axis_z(snapshot.surface_z)}\n"
         f"Gewindetiefe             {fmt_mm(snapshot.thread_depth)}\n"
         f"Gewindeende              {fmt_axis_z(snapshot.thread_end_z)}\n"
         f"Kernlochtiefe Soll       {core}\n\n"

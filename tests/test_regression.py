@@ -93,11 +93,11 @@ class TestGuiModesRegression(unittest.TestCase):
 
     def test_bsf_circle_contains_loop(self):
         self.app.mode_var.set("HEULE BSF")
+        self.app.on_mode_change(None)
         self.app.position_mode_var.set("Teilkreis")
         self.app.on_position_mode_change(None)
-        self.app.entries["blade_thickness"].delete(0, "end")
-        self.app.entries["blade_thickness"].insert(0, "3")
-        self.app.blade_measurement_var.set("Spindelseitige Schwertkante (Oberkante)")
+        self.app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
+        self.app.on_bsf_tool_profile_change()
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("; --- TEILKREIS ---", code)

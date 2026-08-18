@@ -15,7 +15,6 @@ from typing import Any, Dict, List
 
 from app_info import APP_AUTHOR, APP_EMAIL, APP_NAME, APP_VERSION, APP_WEBSITE
 from app_paths import APP_ICON_PNG_REL, resource_path
-from bsf_blade import MEASUREMENT_LABELS, BladeMeasurementReference
 from coordinates import BGFCoordinatePosition, BSFCoordinatePosition
 from ui import MODE_BGF, MODE_BSF
 
@@ -135,9 +134,8 @@ def _prepare_bsf_single(app) -> None:
     app.on_mode_change(None)
     app.position_mode_var.set("Einzelposition")
     app.on_position_mode_change(None)
-    app.entries["blade_thickness"].delete(0, "end")
-    app.entries["blade_thickness"].insert(0, "3")
-    app.blade_measurement_var.set(MEASUREMENT_LABELS[BladeMeasurementReference.SPINDLE_SIDE_EDGE])
+    app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
+    app.on_bsf_tool_profile_change()
 
 
 def _programmer_runtime(app) -> Dict[str, str]:
@@ -272,12 +270,26 @@ def _bgf_nc(app) -> Dict[str, str]:
         app.entries[key].delete(0, "end")
         app.entries[key].insert(0, val)
     app.generate_bgf_code()
-    code = app.output_text.get("1.0", "end")
+    code_zero = app.output_text.get("1.0", "end")
+    app.entries["single_surface_z"].delete(0, "end")
+    app.entries["single_surface_z"].insert(0, "20")
+    app.generate_bgf_code()
+    code_plus = app.output_text.get("1.0", "end")
+    app.entries["single_surface_z"].delete(0, "end")
+    app.entries["single_surface_z"].insert(0, "-20")
+    app.generate_bgf_code()
+    code_minus = app.output_text.get("1.0", "end")
     return {
-        "has_begin": str("BEGIN PGM" in code),
-        "mill": str("L Z-19.8390" in code or "Z-19.8390" in code),
-        "drill": str("L Z-22.8100" in code or "Z-22.8100" in code),
-        "snippet_ok": str("Z-19.8390" in code and "Z-22.8100" in code),
+        "has_begin": str("BEGIN PGM" in code_zero),
+        "surface_z0_ok": str("Z-19.8390" in code_zero and "Z-22.8100" in code_zero),
+        "surface_z_plus20_ok": str("Z+0.1610" in code_plus and "Z-2.8100" in code_plus and "Z+25.0000" in code_plus),
+        "surface_z_minus20_ok": str("Z-39.8390" in code_minus and "Z-42.8100" in code_minus and "Z-15.0000" in code_minus),
+        "snippet_ok": str(
+            "Z-19.8390" in code_zero
+            and "Z-22.8100" in code_zero
+            and "Z+0.1610" in code_plus
+            and "Z-39.8390" in code_minus
+        ),
     }
 
 
@@ -291,9 +303,9 @@ def _bgf_files(app) -> str:
 
     tmp = tempfile.mkdtemp(prefix="nc_smoke_bgf_")
     app.coord_rows = [
-        BGFCoordinatePosition(0, 0, 0, 20.0),
-        BGFCoordinatePosition(100, 50, 0, 20.0),
-        BGFCoordinatePosition(-10, 20, 0, 20.0),
+        BGFCoordinatePosition(0, 0, 20.0, 20.0),
+        BGFCoordinatePosition(100, 50, 25.0, 20.0),
+        BGFCoordinatePosition(-10, 20, -10.0, 20.0),
     ]
     app.position_mode_var.set("Koordinatenliste")
     app.on_position_mode_change(None)
@@ -305,6 +317,8 @@ def _bgf_files(app) -> str:
     loaded = load_document_json(json_path)
     if len(loaded.positions) != 3:
         raise RuntimeError("BGF JSON-Rundlauf fehlgeschlagen.")
+    if [p.surface_z for p in loaded.positions] != [20.0, 25.0, -10.0]:
+        raise RuntimeError("BGF JSON-Rundlauf verlor surface_z pro Position.")
     with open(csv_path, "r", encoding="utf-8") as handle:
         imported = import_bgf_csv_text(handle.read(), default_thread_depth=20.0)
     if len(imported) != 3:
@@ -331,15 +345,38 @@ def _bsf_nc(app) -> Dict[str, str]:
     app.on_mode_change(None)
     app.position_mode_var.set("Einzelposition")
     app.on_position_mode_change(None)
-    app.entries["blade_thickness"].delete(0, "end")
-    app.entries["blade_thickness"].insert(0, "3")
-    app.blade_measurement_var.set(MEASUREMENT_LABELS[BladeMeasurementReference.SPINDLE_SIDE_EDGE])
+    app.entries["spindle_speed"].delete(0, "end")
+    app.entries["spindle_speed"].insert(0, "777")
+    app.entries["bsf_reference_z"].delete(0, "end")
+    app.entries["bsf_reference_z"].insert(0, "0")
+    app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
+    app.on_bsf_tool_profile_change()
     app.generate_bsf_code()
-    code = app.output_text.get("1.0", "end")
+    code_c = app.output_text.get("1.0", "end")
+    app.entries["bsf_reference_z"].delete(0, "end")
+    app.entries["bsf_reference_z"].insert(0, "20")
+    app.generate_bsf_code()
+    code_c_plus = app.output_text.get("1.0", "end")
+    app.entries["bsf_reference_z"].delete(0, "end")
+    app.entries["bsf_reference_z"].insert(0, "-20")
+    app.generate_bsf_code()
+    code_c_minus = app.output_text.get("1.0", "end")
+    app.entries["bsf_reference_z"].delete(0, "end")
+    app.entries["bsf_reference_z"].insert(0, "0")
+    app.bsf_tool_profile_var.set("BSF-E-1350/050-16.5-14")
+    app.on_bsf_tool_profile_change()
+    app.generate_bsf_code()
+    code_e = app.output_text.get("1.0", "end")
     return {
-        "has_begin": str("BEGIN PGM" in code),
-        "has_m5": str("M5 ; Spindel aus" in code),
-        "has_cycl9": str("CYCL DEF 9.1" in code),
+        "has_begin": str("BEGIN PGM" in code_c),
+        "has_m5": str("M5 ; Spindel aus" in code_c),
+        "has_cycl9": str("CYCL DEF 9.1" in code_c),
+        "tool_c_activation": str("S2000 M3 ; Spindel einschalten" in code_c),
+        "tool_e_activation": str("S1500 M3 ; Spindel einschalten" in code_e),
+        "process_speed_separate": str("TOOL CALL 8 Z S777" in code_c and "TOOL CALL 8 Z S777" in code_e),
+        "spindle_on_z_0": str("L Z+1.0000 R0 FMAX S2000 M3 ; Spindel einschalten" in code_c),
+        "spindle_on_z_plus20": str("L Z+21.0000 R0 FMAX S2000 M3 ; Spindel einschalten" in code_c_plus),
+        "spindle_on_z_minus20": str("L Z-19.0000 R0 FMAX S2000 M3 ; Spindel einschalten" in code_c_minus),
     }
 
 
@@ -367,6 +404,12 @@ def _bsf_files(app) -> str:
     loaded = load_bsf_document_json(json_path)
     if len(loaded.positions) != 3:
         raise RuntimeError("BSF JSON-Rundlauf fehlgeschlagen.")
+    if not loaded.tool_profile_key:
+        raise RuntimeError("BSF JSON V2 ohne tool_profile_key.")
+    raw_json = open(json_path, "r", encoding="utf-8").read()
+    for forbidden in ("blade_thickness", "measurement_reference", "holder_to_cutting_edge", "activation_speed"):
+        if forbidden in raw_json:
+            raise RuntimeError(f"BSF JSON V2 enthaelt verbotenes Feld: {forbidden}")
     with open(csv_path, "r", encoding="utf-8") as handle:
         imported = import_bsf_csv_text(handle.read())
     if len(imported) != 3:

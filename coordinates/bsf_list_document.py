@@ -1,14 +1,7 @@
-"""Natives HEULE-BSF-Positionslistenformat (.bsf.json) – Persistenz ohne Derived Data.
+"""Natives HEULE-BSF-Positionslistenformat (.bsf.json).
 
-format = HEULE_BSF_POSITION_LIST, version = 1
-Berechnete Z-Werte, Blade-Offset und Statusflags werden NICHT gespeichert.
-
-SAVE_ALLOWED != NC_CODE_ALLOWED:
-Ein syntaktisch vollstaendiges Projekt (endliche Zahlen, gueltige Enums,
-BladeGeometry thickness > 0, mindestens eine XY-Position) darf gespeichert
-und geladen werden. Unzureichendes safe_z bleibt ein korrigierbarer
-Projektstatus (NC warnt/prueft spaeter). blade_thickness <= 0 oder unbekannte
-Vermessreferenz sind strukturell ungueltig und blockieren Speichern/Laden.
+Version 2 speichert das gewaehlte HEULE-Werkzeugprofil ueber seinen stabilen Key.
+Legacy-Version 1 wird weiterhin geladen, aber ohne Auto-Mapping auf ein Profil.
 """
 
 from __future__ import annotations
@@ -19,17 +12,13 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, Sequence, Tuple
 
-from bsf_blade import (
-    BladeMeasurementReference,
-    build_bsf_blade_geometry,
-    validate_blade_thickness,
-)
+from heule_bsf_tools import BSF_TOOL_PROFILES, profile_by_key
 from nc_programmer import ProgrammerError, normalize_programmer
 
 from .bsf_position import BSFCoordinatePosition
 
 FORMAT_NAME = "HEULE_BSF_POSITION_LIST"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 MAX_BSF_POSITIONS = 10_000
 MAX_FILE_BYTES = 5_000_000
 
@@ -76,11 +65,10 @@ class BSFPositionListDocument:
     blank_size: float
     blank_height: float
     z_reference: str
+    tool_profile_key: str | None
     bund_thickness: float
     sink_finish: float
     clearance: float
-    blade_thickness: float
-    blade_measurement_reference: BladeMeasurementReference
     spindle_speed: int
     feed: float
     dwell_time: float
@@ -94,6 +82,7 @@ class BSFPositionListDocument:
     end_safe_z: float
     positions: Tuple[BSFCoordinatePosition, ...] = field(default_factory=tuple)
     programmer: str = ""
+    reference_z: float = 0.0
 
     @property
     def format_name(self) -> str:
@@ -157,17 +146,13 @@ def _require_bool(value: Any, field_name: str) -> bool:
     return value
 
 
-def _parse_measurement_reference(raw: Any) -> BladeMeasurementReference:
+def _parse_tool_profile_key(raw: Any) -> str:
     if not isinstance(raw, str) or not raw.strip():
-        raise BSFDocumentError("blade.measurement_reference fehlt oder ist leer.")
-    name = raw.strip()
-    allowed = {item.name for item in BladeMeasurementReference}
-    if name not in allowed:
-        raise BSFDocumentError(
-            f"Unbekannte Vermessreferenz '{name}'. "
-            f"Erlaubt: {', '.join(sorted(allowed))}."
-        )
-    return BladeMeasurementReference[name]
+        raise BSFDocumentError("tool.profile fehlt oder ist leer.")
+    key = raw.strip()
+    if key not in BSF_TOOL_PROFILES:
+        raise BSFDocumentError(f"Unbekanntes HEULE-Werkzeugprofil '{key}'.")
+    return key
 
 
 def _parse_z_reference(raw: Any) -> str:
@@ -198,16 +183,6 @@ def _parse_position(raw: Any, index: int) -> BSFCoordinatePosition:
     return BSFCoordinatePosition(x=x, y=y)
 
 
-def _validate_blade(thickness: float, reference: BladeMeasurementReference) -> None:
-    err = validate_blade_thickness(thickness)
-    if err:
-        raise BSFDocumentError(err)
-    try:
-        build_bsf_blade_geometry(thickness, reference)
-    except Exception as exc:
-        raise BSFDocumentError(str(exc)) from exc
-
-
 def document_to_dict(doc: BSFPositionListDocument) -> Dict[str, Any]:
     return {
         "format": FORMAT_NAME,
@@ -221,13 +196,13 @@ def document_to_dict(doc: BSFPositionListDocument) -> Dict[str, Any]:
         },
         "workpiece": {
             "z_reference": doc.z_reference,
+            "reference_z": doc.reference_z,
             "bund_thickness": doc.bund_thickness,
             "sink_finish": doc.sink_finish,
             "clearance": doc.clearance,
         },
-        "blade": {
-            "thickness": doc.blade_thickness,
-            "measurement_reference": doc.blade_measurement_reference.name,
+        "tool": {
+            "profile": doc.tool_profile_key,
         },
         "process": {
             "spindle_speed": doc.spindle_speed,
@@ -281,16 +256,28 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
     if not isinstance(workpiece, dict):
         raise BSFDocumentError("Abschnitt 'workpiece' fehlt oder ist ungueltig.")
     z_reference = _parse_z_reference(workpiece.get("z_reference"))
+    if "reference_z" in workpiece:
+        reference_z = _require_finite(workpiece.get("reference_z"), "workpiece.reference_z")
+    else:
+        reference_z = 0.0
     bund_thickness = _require_finite(workpiece.get("bund_thickness"), "workpiece.bund_thickness")
     sink_finish = _require_finite(workpiece.get("sink_finish"), "workpiece.sink_finish")
     clearance = _require_finite(workpiece.get("clearance"), "workpiece.clearance")
 
-    blade = data.get("blade")
-    if not isinstance(blade, dict):
-        raise BSFDocumentError("Abschnitt 'blade' fehlt oder ist ungueltig.")
-    blade_thickness = _require_finite(blade.get("thickness"), "blade.thickness")
-    measurement_reference = _parse_measurement_reference(blade.get("measurement_reference"))
-    _validate_blade(blade_thickness, measurement_reference)
+    tool_profile_key: str | None = None
+    if version >= 2:
+        tool = data.get("tool")
+        if not isinstance(tool, dict):
+            raise BSFDocumentError("Abschnitt 'tool' fehlt oder ist ungueltig.")
+        tool_profile_key = _parse_tool_profile_key(tool.get("profile"))
+    else:
+        blade = data.get("blade")
+        if not isinstance(blade, dict):
+            raise BSFDocumentError("Abschnitt 'blade' fehlt oder ist ungueltig.")
+        # Legacy v1: Blade-Daten bewusst NICHT in ein neues Profil mappen.
+        _require_finite(blade.get("thickness"), "blade.thickness")
+        if not isinstance(blade.get("measurement_reference"), str):
+            raise BSFDocumentError("blade.measurement_reference fehlt oder ist leer.")
 
     process = data.get("process")
     if not isinstance(process, dict):
@@ -354,11 +341,11 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         blank_size=blank_size,
         blank_height=blank_height,
         z_reference=z_reference,
+        tool_profile_key=tool_profile_key,
+        reference_z=reference_z,
         bund_thickness=bund_thickness,
         sink_finish=sink_finish,
         clearance=clearance,
-        blade_thickness=blade_thickness,
-        blade_measurement_reference=measurement_reference,
         spindle_speed=spindle_speed,
         feed=feed,
         dwell_time=dwell_time,
@@ -415,11 +402,10 @@ def build_bsf_document(
     blank_size: float,
     blank_height: float,
     z_reference: str,
+    tool_profile_key: str,
     bund_thickness: float,
     sink_finish: float,
     clearance: float,
-    blade_thickness: float,
-    blade_measurement_reference: BladeMeasurementReference,
     spindle_speed: int,
     feed: float,
     dwell_time: float,
@@ -433,6 +419,7 @@ def build_bsf_document(
     end_safe_z: float,
     positions: Sequence[BSFCoordinatePosition],
     programmer: str = "",
+    reference_z: float = 0.0,
 ) -> BSFPositionListDocument:
     if not positions:
         raise BSFDocumentError("Keine Bearbeitungspositionen vorhanden.")
@@ -446,11 +433,12 @@ def build_bsf_document(
         raise BSFDocumentError("Unbekannte Messer-Deaktivierung.")
     if tool_number <= 0:
         raise BSFDocumentError("Werkzeugnummer T muss groesser 0 sein.")
+    if not tool_profile_key or profile_by_key(tool_profile_key) is None:
+        raise BSFDocumentError("HEULE_TOOL_SELECTION_REQUIRED")
     try:
         programmer_norm = normalize_programmer(programmer)
     except ProgrammerError as exc:
         raise BSFDocumentError(f"Programmierer: {exc.message}") from exc
-    _validate_blade(blade_thickness, blade_measurement_reference)
     for idx, pos in enumerate(positions, start=1):
         if not math.isfinite(pos.x) or not math.isfinite(pos.y):
             raise BSFDocumentError(f"Position {idx}: X/Y ist nicht endlich.")
@@ -465,6 +453,7 @@ def build_bsf_document(
         ("End-Sicherheits-Z", end_safe_z),
         ("Rohteil-Kantenlaenge", blank_size),
         ("Rohteil-Hoehe", blank_height),
+        ("Z-Lage Bezugsebene", reference_z),
     ):
         if not math.isfinite(value):
             raise BSFDocumentError(f"{name} ist nicht endlich.")
@@ -475,11 +464,10 @@ def build_bsf_document(
         blank_size=float(blank_size),
         blank_height=float(blank_height),
         z_reference=z_reference,
+        tool_profile_key=tool_profile_key,
         bund_thickness=float(bund_thickness),
         sink_finish=float(sink_finish),
         clearance=float(clearance),
-        blade_thickness=float(blade_thickness),
-        blade_measurement_reference=blade_measurement_reference,
         spindle_speed=int(spindle_speed),
         feed=float(feed),
         dwell_time=float(dwell_time),
@@ -493,4 +481,5 @@ def build_bsf_document(
         end_safe_z=float(end_safe_z),
         positions=tuple(positions),
         programmer=programmer_norm,
+        reference_z=float(reference_z),
     )

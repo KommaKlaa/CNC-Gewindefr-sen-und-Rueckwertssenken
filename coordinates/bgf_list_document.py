@@ -291,7 +291,7 @@ def build_document(
         for name, value in (
             ("X", pos.x),
             ("Y", pos.y),
-            ("Z Oberflaeche", pos.surface_z),
+            ("Z Bohrungsanfang", pos.surface_z),
             ("Gewindetiefe", pos.thread_depth),
         ):
             if not math.isfinite(value):

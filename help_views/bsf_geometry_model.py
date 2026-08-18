@@ -1,7 +1,4 @@
-"""Read-only Snapshot fuer die HEULE-BSF-Senkgeometrie-Hilfe.
-
-Consumer der Domain ``bsf_blade.py`` – keine eigenen Z-Formeln.
-"""
+"""Read-only Snapshot fuer die HEULE-BSF-Senkgeometrie-Hilfe."""
 
 from __future__ import annotations
 
@@ -9,16 +6,12 @@ import math
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from bsf_blade import (
-    FINISH_EDGE,
-    MEASUREMENT_LABELS,
-    MEASUREMENT_PLACEHOLDER,
-    BladeMeasurementReference,
-    apply_blade_offset,
-    blade_reference_offset,
-    calculate_workpiece_bsf_z,
-    parse_blade_thickness,
-    parse_measurement_reference,
+from bsf_blade import apply_workpiece_reference_z, calculate_workpiece_bsf_z, parse_reference_z
+from heule_bsf_tools import (
+    BSFToolProfile,
+    MEASUREMENT_LABEL,
+    profile_by_designation,
+    programmed_holder_z_for_cutting_edge,
 )
 
 Z0_BOTTOM_LABEL = "Z0 ist Unterkante Bund"
@@ -70,10 +63,10 @@ def status_detail(snapshot: "BSFGeometryHelpSnapshot") -> str:
         parts.append("Senk-Fertigmaß fehlt")
     if snapshot.clearance is None:
         parts.append("Freifahrt fehlt")
-    if snapshot.blade_thickness is None:
-        parts.append("Schwertdicke fehlt")
-    if snapshot.measurement_reference is None:
-        parts.append("Vermessreferenz fehlt")
+    if snapshot.tool_profile is None:
+        parts.append("HEULE Werkzeug fehlt")
+    if snapshot.reference_z is None:
+        parts.append("Z-Lage Bezugsebene fehlt")
     return " · ".join(parts)
 
 
@@ -82,22 +75,16 @@ class BSFGeometryHelpSnapshot:
     bund_thickness: Optional[float]
     sink_depth: Optional[float]
     clearance: Optional[float]
-    blade_thickness: Optional[float]
-    measurement_reference: Optional[BladeMeasurementReference]
-    measurement_label: str
+    tool_profile: Optional[BSFToolProfile]
     z0_is_flange_bottom: bool
     z0_label: str
-    finish_edge: BladeMeasurementReference
+    reference_z: Optional[float]
     workpiece_z_sink_finish: Optional[float]
     workpiece_z_clearance: Optional[float]
-    programmed_z_sink_finish: Optional[float]
-    programmed_z_clearance: Optional[float]
+    programmed_holder_z_sink_finish: Optional[float]
+    programmed_holder_z_clearance: Optional[float]
     nc_blocked: bool
     notes: List[str] = field(default_factory=list)
-
-    @property
-    def finish_edge_label(self) -> str:
-        return MEASUREMENT_LABELS[self.finish_edge]
 
 
 def build_bsf_geometry_help_snapshot(
@@ -105,32 +92,22 @@ def build_bsf_geometry_help_snapshot(
     bund_text: str,
     sink_text: str,
     clearance_text: str,
-    blade_text: str,
-    measurement_label: str,
     z0_label: str,
+    reference_z_text: str = "0",
+    tool_designation: str = "",
 ) -> BSFGeometryHelpSnapshot:
     """Baut den Hilfesnapshot aus GUI-Texten. Keine Dialoge, keine erfundenen Werte."""
     bund = _parse_optional_mm(bund_text)
     sink = _parse_optional_mm(sink_text)
     clearance = _parse_optional_mm(clearance_text)
-
-    blade_ok, blade_thickness, _ = parse_blade_thickness(blade_text)
-    if not blade_ok:
-        blade_thickness = None
-
-    meas_ok, meas_ref, _ = parse_measurement_reference(measurement_label)
-    if not meas_ok:
-        meas_ref = None
-        shown_meas = ""
-        if (measurement_label or "").strip() in ("", MEASUREMENT_PLACEHOLDER):
-            shown_meas = ""
-        else:
-            shown_meas = (measurement_label or "").strip()
-    else:
-        shown_meas = MEASUREMENT_LABELS[meas_ref]
+    tool_profile = profile_by_designation(tool_designation)
 
     z0_is_bottom = z0_label != Z0_TOP_LABEL
     z0_shown = Z0_BOTTOM_LABEL if z0_is_bottom else Z0_TOP_LABEL
+
+    ok_ref, reference_z, _ = parse_reference_z(reference_z_text if (reference_z_text or "").strip() else "0")
+    if not ok_ref:
+        reference_z = None
 
     notes: List[str] = []
     if bund is None:
@@ -139,10 +116,10 @@ def build_bsf_geometry_help_snapshot(
         notes.append("Senk-Fertigmaß fehlt")
     if clearance is None:
         notes.append("Freifahrt fehlt")
-    if blade_thickness is None:
-        notes.append("Schwertdicke fehlt")
-    if meas_ref is None:
-        notes.append("Vermessreferenz fehlt")
+    if tool_profile is None:
+        notes.append("HEULE Werkzeug fehlt")
+    if reference_z is None:
+        notes.append("Z-Lage Bezugsebene fehlt")
 
     workpiece_sink = None
     workpiece_clear = None
@@ -157,30 +134,28 @@ def build_bsf_geometry_help_snapshot(
             clearance,
             z0_is_flange_bottom=z0_is_bottom,
         )
+        if reference_z is not None:
+            wp = apply_workpiece_reference_z(wp, reference_z)
         workpiece_sink = wp["z_sink_finish"]
         workpiece_clear = wp["z_clearance"]
-        if blade_thickness is not None and meas_ref is not None:
-            offset = blade_reference_offset(blade_thickness, meas_ref)
-            programmed = apply_blade_offset(wp, offset)
-            programmed_sink = programmed["z_sink_finish"]
-            programmed_clear = programmed["z_clearance"]
+        if tool_profile is not None:
+            programmed_sink = programmed_holder_z_for_cutting_edge(workpiece_sink, tool_profile)
+            programmed_clear = programmed_holder_z_for_cutting_edge(workpiece_clear, tool_profile)
 
-    nc_blocked = (not workpiece_ok) or blade_thickness is None or meas_ref is None
+    nc_blocked = (not workpiece_ok) or tool_profile is None or reference_z is None
 
     return BSFGeometryHelpSnapshot(
         bund_thickness=bund,
         sink_depth=sink,
         clearance=clearance,
-        blade_thickness=blade_thickness,
-        measurement_reference=meas_ref,
-        measurement_label=shown_meas,
+        tool_profile=tool_profile,
         z0_is_flange_bottom=z0_is_bottom,
         z0_label=z0_shown,
-        finish_edge=FINISH_EDGE,
+        reference_z=reference_z,
         workpiece_z_sink_finish=workpiece_sink,
         workpiece_z_clearance=workpiece_clear,
-        programmed_z_sink_finish=programmed_sink,
-        programmed_z_clearance=programmed_clear,
+        programmed_holder_z_sink_finish=programmed_sink,
+        programmed_holder_z_clearance=programmed_clear,
         nc_blocked=nc_blocked,
         notes=notes,
     )
@@ -188,20 +163,33 @@ def build_bsf_geometry_help_snapshot(
 
 def format_help_info(snapshot: BSFGeometryHelpSnapshot) -> str:
     z0_short = "Unterkante Bund" if snapshot.z0_is_flange_bottom else "Oberkante Bund"
-    meas = short_edge_label(snapshot.measurement_label)
-    finish = short_edge_label(snapshot.finish_edge_label)
+    designation = snapshot.tool_profile.designation if snapshot.tool_profile is not None else "—"
+    offset = (
+        fmt_mm(snapshot.tool_profile.holder_to_cutting_edge_mm)
+        if snapshot.tool_profile is not None
+        else "—"
+    )
+    speed = (
+        "—"
+        if snapshot.tool_profile is None or snapshot.tool_profile.activation_speed_rpm is None
+        else f"{snapshot.tool_profile.activation_speed_rpm:d} U/min"
+    )
     return (
         "AKTUELLE GEOMETRIE\n\n"
         "Werkstück\n"
         f"Bunddicke               {fmt_mm(snapshot.bund_thickness)}\n"
         f"Senk-Fertigmaß          {fmt_mm(snapshot.sink_depth)}\n"
         f"Freifahrt               {fmt_mm(snapshot.clearance)}\n"
-        f"Z0                      {z0_short}\n\n"
+        f"Bezugsebene             {z0_short}\n"
+        f"Z-Lage                  {fmt_axis_z(snapshot.reference_z)}\n\n"
         "Werkzeug\n"
-        f"Schwertdicke            {fmt_mm(snapshot.blade_thickness)}\n"
-        f"Vermessung              {meas}\n"
-        f"Fertigkante             {finish}\n\n"
+        f"HEULE Werkzeug          {designation}\n"
+        f"Vermessung              {MEASUREMENT_LABEL}\n"
+        f"Halter -> Schneide      {offset}\n"
+        f"Aktivierungsdrehzahl    {speed}\n\n"
         "NC\n"
-        f"Finish-Z                {fmt_axis_z(snapshot.programmed_z_sink_finish)}\n"
-        f"Freifahrt-Z             {fmt_axis_z(snapshot.programmed_z_clearance)}"
+        f"Schneidenziel Finish    {fmt_axis_z(snapshot.workpiece_z_sink_finish)}\n"
+        f"Schneidenziel Freifahrt {fmt_axis_z(snapshot.workpiece_z_clearance)}\n"
+        f"Halter-Z Finish         {fmt_axis_z(snapshot.programmed_holder_z_sink_finish)}\n"
+        f"Halter-Z Freifahrt      {fmt_axis_z(snapshot.programmed_holder_z_clearance)}"
     )

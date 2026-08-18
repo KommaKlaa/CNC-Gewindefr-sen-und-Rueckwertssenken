@@ -7,7 +7,7 @@ Kein CNC-/Domainbezug.
 from __future__ import annotations
 
 APP_NAME = "NC-Code Generator"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 
 APP_AUTHOR = "Jens Behm"
 APP_WEBSITE = "behm-it.de"
@@ -41,5 +41,5 @@ WINDOWS_FILE_VERSION = derive_windows_version(APP_VERSION)
 WINDOWS_PRODUCT_VERSION = WINDOWS_FILE_VERSION
 
 # Release-Kennzeichnung, keine CNC-Domainkopplung.
-# True erst nach fachlichem Gate BSF.VAL.1.
-BSF_REAL_TOOL_VALIDATED = False
+# True nach fachlichem Gate BSF.VAL.1.
+BSF_REAL_TOOL_VALIDATED = True

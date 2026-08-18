@@ -59,8 +59,9 @@ class PreviewSnapshot:
     bsf_bund_thickness: Optional[float] = None
     bsf_sink_depth: Optional[float] = None
     bsf_clearance: Optional[float] = None
-    bsf_blade_thickness: Optional[float] = None
-    bsf_measurement_label: str = ""
+    bsf_tool_designation: str = ""
+    bsf_holder_to_edge_mm: Optional[float] = None
+    bsf_reference_z: Optional[float] = None
 
 
 def _marker_for(*, depth_ok: bool, safe_ok: bool, is_dup: bool) -> str:
@@ -225,10 +226,11 @@ def build_bsf_preview_from_xy(
     bund_thickness: Optional[float] = None,
     sink_depth: Optional[float] = None,
     clearance: Optional[float] = None,
-    blade_thickness: Optional[float] = None,
-    measurement_label: str = "",
+    tool_designation: str = "",
+    holder_to_edge_mm: Optional[float] = None,
     circle_info: Optional[str] = None,
     extra_warnings: Optional[List[str]] = None,
+    reference_z: Optional[float] = None,
 ) -> PreviewSnapshot:
     """Read-only Preview fuer HEULE BSF (X/Y, keine BGF-Tiefen)."""
     from coordinates.model import XYCoordinate
@@ -307,6 +309,7 @@ def build_bsf_preview_from_xy(
         bsf_bund_thickness=bund_thickness,
         bsf_sink_depth=sink_depth,
         bsf_clearance=clearance,
-        bsf_blade_thickness=blade_thickness,
-        bsf_measurement_label=measurement_label,
+        bsf_tool_designation=tool_designation,
+        bsf_holder_to_edge_mm=holder_to_edge_mm,
+        bsf_reference_z=reference_z,
     )

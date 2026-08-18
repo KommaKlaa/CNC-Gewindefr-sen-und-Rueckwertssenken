@@ -279,11 +279,10 @@ class TestProgrammerJson(unittest.TestCase):
             blank_size=1000.0,
             blank_height=60.0,
             z_reference="BOTTOM_EDGE",
+            tool_profile_key="BSF_C_1000_050_10_5_23",
             bund_thickness=18.0,
             sink_finish=38.0,
             clearance=23.0,
-            blade_thickness=3.0,
-            blade_measurement_reference=BladeMeasurementReference.SPINDLE_SIDE_EDGE,
             spindle_speed=1500,
             feed=120.0,
             dwell_time=1.5,
@@ -298,7 +297,7 @@ class TestProgrammerJson(unittest.TestCase):
             positions=[BSFCoordinatePosition(0, 0)],
             programmer="Max Mustermann",
         )
-        self.assertEqual(BSF_FORMAT_VERSION, 1)
+        self.assertEqual(BSF_FORMAT_VERSION, 2)
         payload = bsf_document_to_dict(doc)
         self.assertEqual(payload["program"]["programmer"], "Max Mustermann")
         with tempfile.TemporaryDirectory() as tmp:
@@ -314,11 +313,10 @@ class TestProgrammerJson(unittest.TestCase):
                 blank_size=1000.0,
                 blank_height=60.0,
                 z_reference="BOTTOM_EDGE",
+                tool_profile_key="BSF_C_1000_050_10_5_23",
                 bund_thickness=18.0,
                 sink_finish=38.0,
                 clearance=23.0,
-                blade_thickness=3.0,
-                blade_measurement_reference=BladeMeasurementReference.SPINDLE_SIDE_EDGE,
                 spindle_speed=1500,
                 feed=120.0,
                 dwell_time=1.5,
@@ -334,6 +332,9 @@ class TestProgrammerJson(unittest.TestCase):
             )
         )
         del legacy["program"]["programmer"]
+        legacy["version"] = 1
+        legacy["blade"] = {"thickness": 3.0, "measurement_reference": "SPINDLE_SIDE_EDGE"}
+        del legacy["tool"]
         parsed = parse_bsf_dict(legacy)
         self.assertEqual(parsed.programmer, "")
 

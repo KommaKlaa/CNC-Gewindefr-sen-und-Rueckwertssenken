@@ -41,7 +41,7 @@ def parse_bgf_coordinate_line(
 
     x = _num(parts[0], "X")
     y = _num(parts[1], "Y")
-    surface_z = _num(parts[2], "Z Oberflaeche")
+    surface_z = _num(parts[2], "Bohrungsanfang Z")
 
     if n == 3:
         thread_depth = float(default_thread_depth)

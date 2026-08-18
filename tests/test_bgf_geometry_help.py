@@ -259,7 +259,7 @@ class TestBgfHelpWindow(unittest.TestCase):
         self.assertTrue(win.canvas.find_withtag("drill"))
         self.assertFalse(win.canvas.find_withtag("template_overlay"))
         self.assertFalse(win.canvas.find_withtag("core_hole"))
-        self.assertIn("Z Oberfläche", main)
+        self.assertIn("Bohrungsanfang Z", main)
         self.assertIn("Gewindeende", main)
         self.assertIn("NC-Bohrposition", main)
         self.assertIn("SCHEMATISCH", main)

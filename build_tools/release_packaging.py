@@ -291,14 +291,12 @@ def bsf_validation_label() -> str:
 
 
 def render_readme(app_version: str = APP_VERSION) -> str:
-    pending = ""
-    if not BSF_REAL_TOOL_VALIDATED:
-        pending = (
-            f"Hinweis Version {app_version}:\n"
-            "Die abschließende Realwerkzeug-Validierung für HEULE BSF\n"
-            "ist zum Erstellzeitpunkt dieses Pakets noch ausstehend.\n"
-            "\n"
-        )
+    validation_note = (
+        "HEULE BSF Realwerkzeugvalidierung (interner Prozessnachweis): "
+        f"{bsf_validation_label()}.\n"
+        "Hinweis: Dies ist keine Herstellerzertifizierung.\n"
+        "\n"
+    )
     return (
         f"NC-Code Generator – Version {app_version}\n"
         "\n"
@@ -333,10 +331,21 @@ def render_readme(app_version: str = APP_VERSION) -> str:
         "Werkzeugdaten, Nullpunkt, Werkzeugradius, Werkzeuglänge,\n"
         "M-Funktionen, Drehrichtung, Vorschub und Kollisionsfreiheit prüfen.\n"
         "\n"
-        "Die Schwertdicke und Vermessreferenz müssen der tatsächlichen\n"
-        "Werkzeugvermessung entsprechen.\n"
+        "HEULE BSF Werkzeugvermessung:\n"
+        "Das Werkzeug wird an der vorgesehenen Halter-Messfläche\n"
+        "wie ein normales Werkzeug vermessen.\n"
+        "Die Anwendung berücksichtigt anschließend automatisch den\n"
+        "werkzeugspezifischen axialen Abstand von der Halter-Messfläche\n"
+        "zur ausgeklappten Schneide.\n"
         "\n"
-        f"{pending}"
+        "HEULE Profile:\n"
+        "- BSF-C-1000/050-10.5-23  -> Halter -> Schneide 8.550 mm\n"
+        "- BSF-E-1350/050-16.5-14  -> Halter -> Schneide 11.400 mm\n"
+        "\n"
+        "HEULE Aktivierungsdrehzahl wird profilgesteuert gesetzt.\n"
+        "Die Prozessdrehzahl bleibt als eigener Parameter erhalten.\n"
+        "\n"
+        f"{validation_note}"
         "Die Software ersetzt keine Prüfung des erzeugten NC-Programms\n"
         "an Maschine bzw. Simulation.\n"
     )
@@ -376,6 +385,14 @@ def render_release_info(manifest: Dict[str, object]) -> str:
         "\n"
         "HEULE BSF REAL TOOL VALIDATION:\n"
         f"{bsf_validation_label()}\n"
+        "\n"
+        "SPINDLE_ON_Z REAL VALIDATION:\n"
+        "PASS\n"
+        "\n"
+        "TOOL PROFILE REAL VALIDATION:\n"
+        "PASS\n"
+        "\n"
+        "Hinweis: kein Hersteller-Freigabedokument.\n"
         "\n"
         "Die Software ersetzt keine Prüfung des erzeugten NC-Programms\n"
         "an Maschine bzw. Simulation.\n"

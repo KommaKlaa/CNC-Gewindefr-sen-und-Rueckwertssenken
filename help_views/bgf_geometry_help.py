@@ -128,7 +128,7 @@ class BGFGeometryHelpWindow:
             ("article", "Artikel", False),
             ("radius", "Radius", False),
             ("sec_wp", "Werkstück", True),
-            ("surface", "Z Oberfläche", False),
+            ("surface", "Bohrungsanfang Z", False),
             ("tdepth", "Gewindetiefe", False),
             ("tend", "Gewindeende", False),
             ("core", "Kernlochtiefe Soll", False),
@@ -515,7 +515,7 @@ class BGFGeometryHelpWindow:
         leaders: List[Tuple[float, str, str, str]] = []
         if "approach" in ymap:
             leaders.append((ymap["approach"], f"Anfahr-Z  {fmt_axis_z(s.approach_z)}", _COLOR_APPROACH, "approach"))
-        leaders.append((y_surface, f"Z Oberfläche = {fmt_axis_z(s.surface_z)}", _COLOR_SURFACE, "surface"))
+        leaders.append((y_surface, f"Bohrungsanfang Z = {fmt_axis_z(s.surface_z)}", _COLOR_SURFACE, "surface"))
         if "predrill" in ymap:
             leaders.append(
                 (ymap["predrill"], f"Vorbohr-/Anbohrtiefe  {fmt_mm(s.predrill_depth)}", _COLOR_PREDRILL, "predrill")

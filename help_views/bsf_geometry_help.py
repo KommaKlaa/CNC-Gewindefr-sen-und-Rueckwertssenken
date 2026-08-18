@@ -7,13 +7,12 @@ from tkinter import ttk
 from typing import Callable, Dict, Optional
 
 from app_paths import apply_window_icon
-from bsf_blade import BladeMeasurementReference, FINISH_EDGE, MEASUREMENT_LABELS
+from heule_bsf_tools import MEASUREMENT_LABEL
 from help_views.bsf_geometry_model import (
     BSFGeometryHelpSnapshot,
     fmt_axis_z,
     fmt_mm,
     format_help_info,
-    short_edge_label,
     status_detail,
     status_headline,
 )
@@ -23,26 +22,18 @@ _COLOR_FLANGE_A = "#c5ccd4"
 _COLOR_FLANGE_B = "#b3bbc4"
 _COLOR_FLANGE_LINE = "#2f353b"
 _COLOR_TOOL = "#6d747c"
-_COLOR_BLADE = "#f0b429"
+_COLOR_CUT = "#f0b429"
 _COLOR_FINISH = "#1a7f37"
 _COLOR_MEAS = "#0969da"
 _COLOR_Z0 = "#cf222e"
 _COLOR_AXIS = "#57606a"
-_COLOR_SINK = "#1a7f37"
-_COLOR_CLEAR = "#8250df"
 _COLOR_TEXT = "#1f2328"
-_COLOR_CHAMFER = "#d8ead8"
 _COLOR_OK = "#1a7f37"
 _COLOR_BLOCK = "#cf222e"
 
 
 class BSFGeometryHelpWindow:
-    def __init__(
-        self,
-        master: tk.Misc,
-        *,
-        snapshot_provider: Callable[[], BSFGeometryHelpSnapshot],
-    ) -> None:
+    def __init__(self, master: tk.Misc, *, snapshot_provider: Callable[[], BSFGeometryHelpSnapshot]) -> None:
         self._provider = snapshot_provider
         self.win = tk.Toplevel(master)
         self.win.title("HEULE BSF – Senkgeometrie")
@@ -84,11 +75,9 @@ class BSFGeometryHelpWindow:
         self.canvas = tk.Canvas(body, background=_COLOR_BG, highlightthickness=1, highlightbackground="#c8cdd2")
         self.canvas.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 8))
 
-        detail_frame = ttk.LabelFrame(body, text="Schwertdetail", padding=4)
+        detail_frame = ttk.LabelFrame(body, text="Werkzeugvermessung", padding=4)
         detail_frame.grid(row=0, column=1, sticky="nsew", pady=(0, 6))
-        self.detail_canvas = tk.Canvas(
-            detail_frame, background="#f7f8fa", highlightthickness=0, height=220
-        )
+        self.detail_canvas = tk.Canvas(detail_frame, background="#f7f8fa", highlightthickness=0, height=220)
         self.detail_canvas.pack(fill=tk.BOTH, expand=True)
 
         info_frame = ttk.LabelFrame(body, text="Aktuelle Geometrie", padding=8)
@@ -101,14 +90,18 @@ class BSFGeometryHelpWindow:
             ("bund", "Bunddicke", False),
             ("sink", "Senk-Fertigmaß", False),
             ("clear", "Freifahrt", False),
-            ("z0", "Z0", False),
+            ("z0", "Bezugsebene", False),
+            ("ref_z", "Z-Lage", False),
             ("sec_tool", "Werkzeug", True),
-            ("blade", "Schwertdicke", False),
+            ("tool", "HEULE Werkzeug", False),
             ("meas", "Vermessung", False),
-            ("finish", "Fertigkante", False),
+            ("offset", "Halter -> Schneide", False),
+            ("speed", "Aktivierungsdrehzahl", False),
             ("sec_nc", "NC", True),
-            ("finish_z", "Finish-Z", False),
-            ("clear_z", "Freifahrt-Z", False),
+            ("finish_z", "Schneidenziel Finish", False),
+            ("clear_z", "Schneidenziel Freifahrt", False),
+            ("holder_finish", "Halter-Z Finish", False),
+            ("holder_clear", "Halter-Z Freifahrt", False),
         ]
         for r, (key, caption, section) in enumerate(rows):
             if section:
@@ -145,16 +138,25 @@ class BSFGeometryHelpWindow:
         s = self.snapshot
         if s is None:
             return
-        z0 = "Unterkante Bund" if s.z0_is_flange_bottom else "Oberkante Bund"
         self._info_vars["bund"].set(fmt_mm(s.bund_thickness))
         self._info_vars["sink"].set(fmt_mm(s.sink_depth))
         self._info_vars["clear"].set(fmt_mm(s.clearance))
-        self._info_vars["z0"].set(z0)
-        self._info_vars["blade"].set(fmt_mm(s.blade_thickness))
-        self._info_vars["meas"].set(short_edge_label(s.measurement_label))
-        self._info_vars["finish"].set(short_edge_label(s.finish_edge_label))
-        self._info_vars["finish_z"].set(fmt_axis_z(s.programmed_z_sink_finish))
-        self._info_vars["clear_z"].set(fmt_axis_z(s.programmed_z_clearance))
+        self._info_vars["z0"].set("Unterkante Bund" if s.z0_is_flange_bottom else "Oberkante Bund")
+        self._info_vars["ref_z"].set(fmt_axis_z(s.reference_z))
+        self._info_vars["tool"].set(s.tool_profile.designation if s.tool_profile is not None else "—")
+        self._info_vars["meas"].set(MEASUREMENT_LABEL)
+        self._info_vars["offset"].set(
+            fmt_mm(s.tool_profile.holder_to_cutting_edge_mm) if s.tool_profile is not None else "—"
+        )
+        self._info_vars["speed"].set(
+            "—"
+            if s.tool_profile is None or s.tool_profile.activation_speed_rpm is None
+            else f"{s.tool_profile.activation_speed_rpm:d} U/min"
+        )
+        self._info_vars["finish_z"].set(fmt_axis_z(s.workpiece_z_sink_finish))
+        self._info_vars["clear_z"].set(fmt_axis_z(s.workpiece_z_clearance))
+        self._info_vars["holder_finish"].set(fmt_axis_z(s.programmed_holder_z_sink_finish))
+        self._info_vars["holder_clear"].set(fmt_axis_z(s.programmed_holder_z_clearance))
 
     def info_dump(self) -> str:
         return format_help_info(self.snapshot) if self.snapshot is not None else ""
@@ -177,195 +179,57 @@ class BSFGeometryHelpWindow:
         h = float(self.detail_canvas.winfo_height())
         if w < 40 or h < 40:
             return
-        self._draw_blade_detail(w, h)
+        self._draw_tool_detail(w, h)
 
     def _draw_main_cross_section(self, w: float, h: float) -> None:
         s = self.snapshot
         assert s is not None
+        c = self.canvas
 
-        # Kompakte Z-Orientierung oben links – keine Achse durch das Fenster.
-        self.canvas.create_text(
-            12,
-            14,
-            text="+Z ↑ zur Spindel",
-            fill=_COLOR_SINK,
-            anchor="w",
-            font=("Segoe UI", 9, "bold"),
-            tags=("z_compass",),
-        )
-        self.canvas.create_text(
-            12,
-            30,
-            text="-Z ↓ zur Werkzeugspitze",
-            fill=_COLOR_AXIS,
-            anchor="w",
-            font=("Segoe UI", 9),
-            tags=("z_compass",),
-        )
-        self.canvas.create_text(
-            w - 12,
-            14,
-            text="SCHEMATISCH – NICHT MASSSTÄBLICH",
-            fill=_COLOR_AXIS,
-            anchor="e",
-            font=("Segoe UI", 8),
-            tags=("legend",),
-        )
+        c.create_text(12, 14, text="+Z ↑ zur Spindel", fill=_COLOR_FINISH, anchor="w", font=("Segoe UI", 9, "bold"))
+        c.create_text(12, 30, text="-Z ↓ zur Werkzeugspitze", fill=_COLOR_AXIS, anchor="w", font=("Segoe UI", 9))
+        c.create_text(w - 12, 14, text="SCHEMATISCH – NICHT MASSSTÄBLICH", fill=_COLOR_AXIS, anchor="e", font=("Segoe UI", 8))
 
-        left_zone = 88.0
-        right_zone = 210.0
-        top_pad = 48.0
-        bot_pad = 18.0
-        usable_h = max(120.0, h - top_pad - bot_pad)
-        flange_h = usable_h * 0.68  # 60–75 % der verfügbaren Schnitthöhe
-        tool_above = usable_h * 0.10
-        blade_h = max(22.0, usable_h * 0.08)
-        clear_h = max(28.0, usable_h * 0.08)
-        y_top = top_pad + tool_above
-        y_bot = y_top + flange_h
-        y_blade_top = y_bot
-        y_blade_bot = y_blade_top + blade_h
-        y_clear = y_blade_bot + clear_h * 0.55
+        top = 90
+        bottom = h - 90
+        left = 130
+        right = w - 210
+        cx = (left + right) / 2
+        hole_half = 22
+        shaft_half = 10
 
-        inner_w = max(120.0, w - left_zone - right_zone)
-        cx = left_zone + inner_w * 0.48
-        flange_half = min(inner_w * 0.46, w * 0.28)
-        hole_half = max(14.0, flange_half * 0.18)
-        left = cx - flange_half
-        right = cx + flange_half
-        hole_l = cx - hole_half
-        hole_r = cx + hole_half
-        shank_half = max(7.0, hole_half * 0.38)
+        c.create_rectangle(left, top, cx - hole_half, bottom, fill=_COLOR_FLANGE_A, outline=_COLOR_FLANGE_LINE, tags=("flange",))
+        c.create_rectangle(cx + hole_half, top, right, bottom, fill=_COLOR_FLANGE_B, outline=_COLOR_FLANGE_LINE, tags=("flange",))
+        c.create_line(cx - hole_half, top, cx - hole_half, bottom, fill=_COLOR_AXIS, dash=(3, 2), tags=("hole",))
+        c.create_line(cx + hole_half, top, cx + hole_half, bottom, fill=_COLOR_AXIS, dash=(3, 2), tags=("hole",))
+        c.create_text(cx, (top + bottom) / 2, text="Bohrung", fill=_COLOR_AXIS, font=("Segoe UI", 8), tags=("hole",))
 
-        y_spindle = y_top - tool_above - 4
+        c.create_rectangle(cx - shaft_half, top - 50, cx + shaft_half, bottom + 40, fill=_COLOR_TOOL, outline=_COLOR_FLANGE_LINE, tags=("tool",))
+        c.create_text(cx, top - 62, text="SPINDEL / Werkzeug", fill=_COLOR_TEXT, font=("Segoe UI", 8, "bold"), tags=("tool",))
+        c.create_text(cx + 40, top - 20, text="↑ SENKEN +Z", fill=_COLOR_FINISH, anchor="w", font=("Segoe UI", 10, "bold"), tags=("sink_arrow",))
 
-        # Werkzeugschaft durch die Bohrung bis ins Schwert
-        self.canvas.create_rectangle(
-            cx - shank_half,
-            y_spindle,
-            cx + shank_half,
-            y_blade_bot,
-            fill=_COLOR_TOOL,
-            outline=_COLOR_FLANGE_LINE,
-            tags=("tool",),
+        chamfer_w = 26
+        chamfer_h = 18
+        c.create_polygon(
+            cx - hole_half, bottom - chamfer_h, cx - hole_half, bottom, cx - hole_half - chamfer_w, bottom,
+            fill="#d8ead8", outline=_COLOR_FINISH, width=2, tags=("sink_finish",)
         )
-        self.canvas.create_text(
-            cx,
-            y_spindle - 10,
-            text="SPINDEL / Werkzeug",
-            fill=_COLOR_TEXT,
-            font=("Segoe UI", 8, "bold"),
-            tags=("tool",),
+        c.create_polygon(
+            cx + hole_half, bottom - chamfer_h, cx + hole_half, bottom, cx + hole_half + chamfer_w, bottom,
+            fill="#d8ead8", outline=_COLOR_FINISH, width=2, tags=("sink_finish",)
         )
-        self.canvas.create_text(
-            cx + shank_half + 10,
-            y_top - 16,
-            text="↑ SENKEN +Z",
-            fill=_COLOR_SINK,
-            anchor="w",
-            font=("Segoe UI", 10, "bold"),
-            tags=("sink_arrow",),
-        )
+        c.create_text(right + 14, bottom + 8, text="Senk-Fertigfläche", fill=_COLOR_FINISH, anchor="w", font=("Segoe UI", 8), tags=("sink_finish",))
 
-        # Bund links/rechts in zwei Grautönen
-        self.canvas.create_rectangle(
-            left, y_top, hole_l, y_bot, fill=_COLOR_FLANGE_A, outline=_COLOR_FLANGE_LINE, width=2, tags=("flange",)
-        )
-        self.canvas.create_rectangle(
-            hole_r, y_top, right, y_bot, fill=_COLOR_FLANGE_B, outline=_COLOR_FLANGE_LINE, width=2, tags=("flange",)
-        )
-        self._hatch(left, y_top, hole_l, y_bot, tag="hatch")
-        self._hatch(hole_r, y_top, right, y_bot, tag="hatch")
-        self.canvas.create_line(hole_l, y_top, hole_l, y_bot, fill=_COLOR_AXIS, dash=(3, 2), tags=("hole",))
-        self.canvas.create_line(hole_r, y_top, hole_r, y_bot, fill=_COLOR_AXIS, dash=(3, 2), tags=("hole",))
-        self.canvas.create_text(
-            cx,
-            y_top + flange_h * 0.42,
-            text="Bohrung",
-            fill=_COLOR_AXIS,
-            font=("Segoe UI", 8),
-            tags=("hole",),
-        )
+        c.create_rectangle(cx - (hole_half + 26), bottom, cx + (hole_half + 26), bottom + 24, fill=_COLOR_CUT, outline=_COLOR_FLANGE_LINE, tags=("blade",))
+        c.create_text(cx, bottom + 12, text="Schneide", fill=_COLOR_TEXT, font=("Segoe UI", 8, "bold"), tags=("blade",))
 
-        # Rueckwaertige Senkflaeche: Fasen an der Bund-Unterseite, seitlich der Bohrung
-        chamfer_w = max(22.0, hole_half * 0.9)
-        chamfer_h = max(18.0, flange_h * 0.12)
-        self.canvas.create_polygon(
-            hole_l,
-            y_bot - chamfer_h,
-            hole_l,
-            y_bot,
-            hole_l - chamfer_w,
-            y_bot,
-            fill=_COLOR_CHAMFER,
-            outline=_COLOR_FINISH,
-            width=2,
-            tags=("sink_finish",),
-        )
-        self.canvas.create_polygon(
-            hole_r,
-            y_bot - chamfer_h,
-            hole_r,
-            y_bot,
-            hole_r + chamfer_w,
-            y_bot,
-            fill=_COLOR_CHAMFER,
-            outline=_COLOR_FINISH,
-            width=2,
-            tags=("sink_finish",),
-        )
-
-        # Schematisches Schwert, verbunden unter dem Bund
-        blade_half = hole_half + 26
-        self.canvas.create_rectangle(
-            cx - blade_half,
-            y_blade_top,
-            cx + blade_half,
-            y_blade_bot,
-            fill=_COLOR_BLADE,
-            outline=_COLOR_FLANGE_LINE,
-            width=2,
-            tags=("blade",),
-        )
-        self.canvas.create_text(
-            cx,
-            (y_blade_top + y_blade_bot) / 2,
-            text="Schwert",
-            fill=_COLOR_TEXT,
-            font=("Segoe UI", 8, "bold"),
-            tags=("blade",),
-        )
-
-        # Freifahrt kompakt, nicht 1:1
-        self.canvas.create_line(
-            cx,
-            y_blade_bot,
-            cx,
-            y_clear,
-            fill=_COLOR_CLEAR,
-            width=2,
-            arrow=tk.LAST,
-            tags=("clearance",),
-        )
-        self.canvas.create_oval(cx - 5, y_clear - 5, cx + 5, y_clear + 5, fill=_COLOR_CLEAR, outline="", tags=("clearance",))
-        self.canvas.create_text(
-            cx + 12,
-            y_clear,
-            text=f"Freifahrt  {fmt_mm(s.clearance)}\nsichere Messerposition",
-            fill=_COLOR_CLEAR,
-            anchor="w",
-            font=("Segoe UI", 8),
-            tags=("clearance",),
-        )
-
-        # Bunddicke links
         dim_x = left - 28
-        self.canvas.create_line(left, y_top, dim_x - 8, y_top, fill=_COLOR_TEXT, tags=("bund_dim",))
-        self.canvas.create_line(left, y_bot, dim_x - 8, y_bot, fill=_COLOR_TEXT, tags=("bund_dim",))
-        self.canvas.create_line(dim_x, y_top, dim_x, y_bot, fill=_COLOR_TEXT, arrow=tk.BOTH, tags=("bund_dim",))
-        self.canvas.create_text(
+        c.create_line(left, top, dim_x - 8, top, fill=_COLOR_TEXT, tags=("bund_dim",))
+        c.create_line(left, bottom, dim_x - 8, bottom, fill=_COLOR_TEXT, tags=("bund_dim",))
+        c.create_line(dim_x, top, dim_x, bottom, fill=_COLOR_TEXT, arrow=tk.BOTH, tags=("bund_dim",))
+        c.create_text(
             dim_x - 8,
-            (y_top + y_bot) / 2,
+            (top + bottom) / 2,
             text=fmt_mm(s.bund_thickness).replace(" mm", "\nmm") if s.bund_thickness is not None else "—",
             fill=_COLOR_TEXT,
             anchor="e",
@@ -373,205 +237,39 @@ class BSFGeometryHelpWindow:
             tags=("bund_dim",),
         )
 
-        # Rechte Leader: Werkstückbeschriftungen, vertikal gestaffelt
-        label_x = right + 18
-        self._leader(right, y_top, label_x, y_top - 2, "Oberkante Bund", _COLOR_TEXT, "label_wp")
-        self._leader(right, y_bot, label_x, y_bot + 16, "Unterkante Bund", _COLOR_TEXT, "label_wp")
-        self._leader(
-            hole_r + chamfer_w,
-            y_bot - 2,
-            label_x,
-            y_bot + 38,
-            "Senk-Fertigfläche",
-            _COLOR_FINISH,
-            "sink_finish",
-        )
+        c.create_text(right + 14, top, text="Oberkante Bund", fill=_COLOR_TEXT, anchor="w", font=("Segoe UI", 8))
+        c.create_text(right + 14, bottom, text="Unterkante Bund", fill=_COLOR_TEXT, anchor="w", font=("Segoe UI", 8))
 
-        # Z0 links, getrennt von den rechten Labels
-        z0_y = y_bot if s.z0_is_flange_bottom else y_top
-        z0_caption = "Z0 · Unterkante Bund" if s.z0_is_flange_bottom else "Z0 · Oberkante Bund"
-        self.canvas.create_line(
-            left - 6,
-            z0_y,
-            right + 6,
-            z0_y,
-            fill=_COLOR_Z0,
-            width=2,
-            dash=(7, 3),
-            tags=("z0",),
-        )
-        self.canvas.create_oval(left - 11, z0_y - 4, left - 3, z0_y + 4, fill=_COLOR_Z0, outline="", tags=("z0",))
-        z0_text_y = z0_y - 14 if s.z0_is_flange_bottom else z0_y + 14
-        self.canvas.create_text(
-            left - 14,
-            z0_text_y,
-            text=z0_caption,
-            fill=_COLOR_Z0,
-            anchor="e",
-            font=("Segoe UI", 8, "bold"),
-            tags=("z0",),
-        )
+        z0_y = bottom if s.z0_is_flange_bottom else top
+        edge = "Unterkante Bund" if s.z0_is_flange_bottom else "Oberkante Bund"
+        caption = f"Bezugsebene · {edge}"
+        if s.reference_z is not None:
+            caption += f"\nZ-Lage {fmt_axis_z(s.reference_z)}"
+        c.create_line(left - 6, z0_y, right + 6, z0_y, fill=_COLOR_Z0, width=2, dash=(7, 3), tags=("z0",))
+        c.create_text(left - 12, z0_y - 14 if s.z0_is_flange_bottom else z0_y + 14, text=caption, fill=_COLOR_Z0, anchor="e", justify="right", font=("Segoe UI", 8, "bold"), tags=("z0",))
 
-    def _leader(self, x0: float, y0: float, x1: float, y1: float, text: str, color: str, tag: str) -> None:
-        self.canvas.create_line(x0, y0, x1, y1, fill=color, tags=(tag,))
-        self.canvas.create_line(x1, y1, x1 + 12, y1, fill=color, tags=(tag,))
-        self.canvas.create_text(
-            x1 + 16,
-            y1,
-            text=text,
-            fill=color,
-            anchor="w",
-            font=("Segoe UI", 8),
-            tags=(tag,),
-        )
-
-    def _hatch(self, x1: float, y1: float, x2: float, y2: float, *, tag: str) -> None:
-        if x2 <= x1 or y2 <= y1:
-            return
-        step = 9
-        start = int(x1 - (y2 - y1))
-        end = int(x2)
-        for x in range(start, end, step):
-            xa, ya = x, y2
-            xb, yb = x + (y2 - y1), y1
-            cx1, cy1, cx2, cy2 = self._clip_45(xa, ya, xb, yb, x1, y1, x2, y2)
-            if cx1 is None:
-                continue
-            self.canvas.create_line(cx1, cy1, cx2, cy2, fill="#9aa3ad", tags=(tag,))
-
-    @staticmethod
-    def _clip_45(xa, ya, xb, yb, x1, y1, x2, y2):
-        pts = []
-        for t in (0.0, 1.0):
-            x = xa + t * (xb - xa)
-            y = ya + t * (yb - ya)
-            if x1 - 0.5 <= x <= x2 + 0.5 and y1 - 0.5 <= y <= y2 + 0.5:
-                pts.append((x, y))
-        # Schnitt mit Rechteckkanten
-        dx, dy = xb - xa, yb - ya
-        if abs(dx) < 1e-9:
-            return None, None, None, None
-        for edge, val in (("x", x1), ("x", x2), ("y", y1), ("y", y2)):
-            if edge == "x":
-                t = (val - xa) / dx
-                y = ya + t * dy
-                if 0 <= t <= 1 and y1 - 0.5 <= y <= y2 + 0.5:
-                    pts.append((val, y))
-            else:
-                t = (val - ya) / dy if abs(dy) > 1e-9 else -1
-                x = xa + t * dx
-                if 0 <= t <= 1 and x1 - 0.5 <= x <= x2 + 0.5:
-                    pts.append((x, val))
-        # eindeutige Endpunkte
-        uniq = []
-        for p in pts:
-            if not any(abs(p[0] - q[0]) < 0.8 and abs(p[1] - q[1]) < 0.8 for q in uniq):
-                uniq.append(p)
-        if len(uniq) < 2:
-            return None, None, None, None
-        uniq.sort()
-        return uniq[0][0], uniq[0][1], uniq[-1][0], uniq[-1][1]
-
-    def _draw_blade_detail(self, w: float, h: float) -> None:
+    def _draw_tool_detail(self, w: float, h: float) -> None:
         s = self.snapshot
         assert s is not None
-        cx = w * 0.46
-        blade_w = min(w * 0.62, 220)
-        blade_h = min(h * 0.38, 90)
-        y_top = h * 0.34
-        y_bot = y_top + blade_h
-        left = cx - blade_w / 2
-        right = cx + blade_w / 2
-        shank = 10
+        c = self.detail_canvas
+        cx = w * 0.42
+        y_meas = 55
+        y_cut = h - 55
+        label = s.tool_profile.designation if s.tool_profile is not None else "Kein Werkzeug"
+        offset = "—" if s.tool_profile is None else fmt_mm(s.tool_profile.holder_to_cutting_edge_mm)
 
-        self.detail_canvas.create_rectangle(
-            cx - shank, 12, cx + shank, y_top, fill=_COLOR_TOOL, outline=_COLOR_FLANGE_LINE, tags=("detail_tool",)
-        )
-        self.detail_canvas.create_text(cx, 14, text="Werkzeug", fill=_COLOR_TEXT, font=("Segoe UI", 8), tags=("detail_tool",))
-        self.detail_canvas.create_rectangle(
-            left, y_top, right, y_bot, fill=_COLOR_BLADE, outline=_COLOR_FLANGE_LINE, width=2, tags=("detail_blade",)
-        )
-        self.detail_canvas.create_text(
-            cx, (y_top + y_bot) / 2, text="SCHWERT", fill=_COLOR_TEXT, font=("Segoe UI", 9, "bold"), tags=("detail_blade",)
-        )
+        c.create_text(cx, 16, text=label, fill=_COLOR_TEXT, font=("Segoe UI", 8, "bold"), tags=("tool_label",))
+        c.create_line(cx, y_meas, cx, y_cut, fill=_COLOR_TOOL, width=14, tags=("tool",))
+        c.create_line(cx - 36, y_meas, cx + 36, y_meas, fill=_COLOR_MEAS, width=3, tags=("measurement_face",))
+        c.create_text(cx + 48, y_meas - 8, text="WERKZEUGVERMESSUNG", fill=_COLOR_MEAS, anchor="w", font=("Segoe UI", 8, "bold"), tags=("measurement_face",))
+        c.create_text(cx + 48, y_meas + 8, text=MEASUREMENT_LABEL, fill=_COLOR_MEAS, anchor="w", font=("Segoe UI", 8), tags=("measurement_face",))
 
-        # Dicke
-        dim_x = right + 16
-        self.detail_canvas.create_line(dim_x, y_top, dim_x, y_bot, fill=_COLOR_TEXT, arrow=tk.BOTH, tags=("detail_dim",))
-        self.detail_canvas.create_text(
-            dim_x + 8,
-            (y_top + y_bot) / 2,
-            text=fmt_mm(s.blade_thickness),
-            fill=_COLOR_TEXT,
-            anchor="w",
-            font=("Segoe UI", 8, "bold"),
-            tags=("detail_dim",),
-        )
+        c.create_line(cx - 24, y_cut, cx + 24, y_cut, fill=_COLOR_FINISH, width=3, tags=("finish_edge",))
+        c.create_text(cx + 48, y_cut, text="FERTIGSCHNEIDE", fill=_COLOR_FINISH, anchor="w", font=("Segoe UI", 8, "bold"), tags=("finish_edge",))
 
-        finish_is_spindle = FINISH_EDGE is BladeMeasurementReference.SPINDLE_SIDE_EDGE
-        y_finish = y_top if finish_is_spindle else y_bot
-        y_other = y_bot if finish_is_spindle else y_top
-        other_ref = (
-            BladeMeasurementReference.TOOL_TIP_SIDE_EDGE
-            if finish_is_spindle
-            else BladeMeasurementReference.SPINDLE_SIDE_EDGE
-        )
-
-        self.detail_canvas.create_line(left, y_finish, right, y_finish, fill=_COLOR_FINISH, width=3, tags=("finish_edge",))
-        self.detail_canvas.create_text(
-            left - 6,
-            y_finish - 12,
-            text="FERTIGKANTE",
-            fill=_COLOR_FINISH,
-            anchor="e",
-            font=("Segoe UI", 8, "bold"),
-            tags=("finish_edge",),
-        )
-        self.detail_canvas.create_text(
-            left,
-            y_finish + (10 if finish_is_spindle else -10),
-            text=MEASUREMENT_LABELS[FINISH_EDGE],
-            fill=_COLOR_FINISH,
-            anchor="w",
-            font=("Segoe UI", 8),
-            tags=("finish_edge",),
-        )
-        self.detail_canvas.create_text(
-            left,
-            y_other + (12 if y_other > y_finish else -12),
-            text=MEASUREMENT_LABELS[other_ref],
-            fill=_COLOR_AXIS,
-            anchor="w",
-            font=("Segoe UI", 8),
-            tags=("detail_blade",),
-        )
-
-        meas = s.measurement_reference
-        if meas is not None:
-            y_meas = y_top if meas is BladeMeasurementReference.SPINDLE_SIDE_EDGE else y_bot
-            self.detail_canvas.create_line(
-                right,
-                y_meas,
-                min(w - 8, right + 28),
-                y_meas,
-                fill=_COLOR_MEAS,
-                width=2,
-                arrow=tk.FIRST,
-                tags=("measurement_edge",),
-            )
-            meas_y = y_meas - 16 if meas is BladeMeasurementReference.SPINDLE_SIDE_EDGE else y_meas + 16
-            self.detail_canvas.create_text(
-                cx,
-                meas_y,
-                text="← WERKZEUG HIER VERMESSEN",
-                fill=_COLOR_MEAS,
-                font=("Segoe UI", 8, "bold"),
-                tags=("measurement_edge",),
-            )
+        c.create_line(68, y_meas, 68, y_cut, fill=_COLOR_TEXT, arrow=tk.BOTH, tags=("offset_dim",))
+        c.create_text(58, (y_meas + y_cut) / 2, text=offset.replace(" mm", "\nmm"), fill=_COLOR_TEXT, anchor="e", font=("Segoe UI", 8, "bold"), tags=("offset_dim",))
 
 
-def open_bsf_geometry_help_window(
-    master: tk.Misc,
-    snapshot_provider: Callable[[], BSFGeometryHelpSnapshot],
-) -> BSFGeometryHelpWindow:
+def open_bsf_geometry_help_window(master: tk.Misc, *, snapshot_provider: Callable[[], BSFGeometryHelpSnapshot]):
     return BSFGeometryHelpWindow(master, snapshot_provider=snapshot_provider)
