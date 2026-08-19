@@ -20,6 +20,13 @@ from bgf_chain import (
     bgf_end_mode_label,
     require_bgf_part_circle_end_mode,
 )
+from bsf_chain import (
+    BSF_END_MODE_CHAIN,
+    BSF_END_MODE_STANDALONE,
+    bsf_end_mode_label,
+    analyze_bsf_part_circle_nc,
+    m30_exec_count as bsf_m30_exec_count,
+)
 from app_paths import APP_ICON_PNG_REL, resource_path
 from coordinates import BGFCoordinatePosition, BSFCoordinatePosition
 from nc_state import NC_STATE_CURRENT, NC_STATE_STALE
@@ -82,6 +89,7 @@ def _execute_smoke(app) -> Dict[str, Any]:
     record("bgf_list_files", lambda: _bgf_files(app))
     record("bgf_preview_help", lambda: _bgf_windows(app))
     record("bsf_nc", lambda: _bsf_nc(app))
+    record("bsf_endmode", lambda: _bsf_endmode(app))
     record("bsf_list_files", lambda: _bsf_files(app))
     record("bsf_preview_help", lambda: _bsf_windows(app))
     record("heidenhain_h", lambda: _export_h(app))
@@ -549,6 +557,68 @@ def _bsf_nc(app) -> Dict[str, str]:
         "spindle_on_z_0": str("L Z+1.0000 R0 FMAX S2000 M3 ; Spindel einschalten" in code_c),
         "spindle_on_z_plus20": str("L Z+21.0000 R0 FMAX S2000 M3 ; Spindel einschalten" in code_c_plus),
         "spindle_on_z_minus20": str("L Z-19.0000 R0 FMAX S2000 M3 ; Spindel einschalten" in code_c_minus),
+    }
+
+
+def _bsf_endmode(app) -> Dict[str, str]:
+    """BSF-Endmodus-Smoke: Chain / Standalone / Stale / Count / Fallthrough."""
+    from ui import MODE_BSF
+
+    def _setup_circle(end_mode: str, count: int = 6):
+        app.mode_var.set(MODE_BSF)
+        app.on_mode_change(None)
+        app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
+        app.on_bsf_tool_profile_change()
+        app.bsf_end_mode_var.set(bsf_end_mode_label(end_mode))
+        app.position_mode_var.set("Teilkreis")
+        app.on_position_mode_change(None)
+        for k, v in [
+            ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.0"),
+            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
+            ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
+            ("program_name", "BSF_SMOKE"), ("raw_stock_top_z", "0"),
+            ("blank_height", "60"), ("blank_size", "1000"),
+            ("diameter", "430"), ("start_angle", "0"),
+            ("center_x", "0"), ("center_y", "0"), ("count", str(count)),
+        ]:
+            app.entries[k].delete(0, "end")
+            app.entries[k].insert(0, v)
+        app.generate_bsf_code()
+        return app.output_text.get("1.0", "end").strip()
+
+    chain_code = _setup_circle(BSF_END_MODE_CHAIN, 6)
+    standalone_code = _setup_circle(BSF_END_MODE_STANDALONE, 6)
+
+    chain_m30 = bsf_m30_exec_count(chain_code)
+    standalone_m30 = bsf_m30_exec_count(standalone_code)
+
+    chain_analysis = analyze_bsf_part_circle_nc(chain_code)
+    standalone_analysis = analyze_bsf_part_circle_nc(standalone_code)
+
+    # Stale-Pruefung
+    chain_code2 = _setup_circle(BSF_END_MODE_CHAIN, 6)
+    was_current = app.nc_guard.is_current(app, output_text=chain_code2)
+    app.bsf_end_mode_var.set(bsf_end_mode_label(BSF_END_MODE_STANDALONE))
+    became_stale = not app.nc_guard.is_current(app, output_text=chain_code2)
+
+    # Count-Regression
+    count_ok = True
+    for c in [1, 6, 8, 24]:
+        code_c = _setup_circle(BSF_END_MODE_CHAIN, c)
+        a = analyze_bsf_part_circle_nc(code_c)
+        if a["fallthrough"]:
+            count_ok = False
+
+    return {
+        "BSF_CHAIN_MODE": "PASS" if chain_m30 == 0 else f"FAIL chain_m30={chain_m30}",
+        "BSF_STANDALONE_MODE": "PASS" if standalone_m30 == 1 else f"FAIL standalone_m30={standalone_m30}",
+        "BSF_CHAIN_NO_M30": "PASS" if chain_m30 == 0 else "FAIL",
+        "BSF_STANDALONE_ONE_M30": "PASS" if standalone_m30 == 1 else "FAIL",
+        "BSF_PART_CIRCLE_NO_FALLTHROUGH": "PASS" if not chain_analysis["fallthrough"] else "FAIL",
+        "BSF_PART_CIRCLE_COUNT": "PASS" if count_ok else "FAIL",
+        "BSF_ENDMODE_STALE": "PASS" if (was_current and became_stale) else "FAIL",
+        "BSF_CHAIN_END_PGM_REACHABLE": "PASS" if chain_analysis["end_pgm_reachable"] else "FAIL",
+        "BSF_STANDALONE_END_PGM": "PASS" if standalone_analysis["lbl999_i"] is not None else "FAIL",
     }
 
 

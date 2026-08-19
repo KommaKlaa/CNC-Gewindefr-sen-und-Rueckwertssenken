@@ -12,6 +12,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, Sequence, Tuple
 
+from bsf_chain import BSF_END_MODE_CHAIN, BSF_END_MODE_STANDALONE, BSF_END_MODE_VALUES, validate_bsf_end_mode
 from heule_bsf_tools import BSF_TOOL_PROFILES, profile_by_key
 from nc_programmer import ProgrammerError, normalize_programmer
 
@@ -84,6 +85,7 @@ class BSFPositionListDocument:
     programmer: str = ""
     reference_z: float = 0.0
     raw_stock_top_z: float = 0.0
+    end_mode: str = BSF_END_MODE_CHAIN
 
     @property
     def format_name(self) -> str:
@@ -224,6 +226,9 @@ def document_to_dict(doc: BSFPositionListDocument) -> Dict[str, Any]:
             "end_safe_z": doc.end_safe_z,
         },
         "positions": [{"x": p.x, "y": p.y} for p in doc.positions],
+        "program_end": {
+            "end_mode": doc.end_mode,
+        },
     }
 
 
@@ -337,6 +342,24 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
 
     positions = tuple(_parse_position(item, idx) for idx, item in enumerate(positions_raw, start=1))
 
+    program_end = data.get("program_end")
+    if program_end is None:
+        # Legacy-Datei ohne end_mode: STANDALONE_M30 erhalten altes Verhalten.
+        end_mode = BSF_END_MODE_STANDALONE
+    else:
+        if not isinstance(program_end, dict):
+            raise BSFDocumentError("Abschnitt 'program_end' ist ungueltig.")
+        raw_end_mode = program_end.get("end_mode")
+        if not isinstance(raw_end_mode, str) or not raw_end_mode.strip():
+            raise BSFDocumentError("Feld 'program_end.end_mode' fehlt oder ist leer.")
+        try:
+            end_mode = validate_bsf_end_mode(raw_end_mode.strip())
+        except ValueError:
+            raise BSFDocumentError(
+                f"Ungueltiger BSF-Endmodus '{raw_end_mode}'. "
+                f"Erlaubt: {', '.join(BSF_END_MODE_VALUES)}."
+            )
+
     return BSFPositionListDocument(
         version=version,
         program_name=program_name,
@@ -363,6 +386,7 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         end_safe_z=end_safe_z,
         positions=positions,
         programmer=programmer,
+        end_mode=end_mode,
     )
 
 
@@ -425,7 +449,15 @@ def build_bsf_document(
     programmer: str = "",
     reference_z: float = 0.0,
     raw_stock_top_z: float = 0.0,
+    end_mode: str = BSF_END_MODE_CHAIN,
 ) -> BSFPositionListDocument:
+    try:
+        end_mode = validate_bsf_end_mode(end_mode)
+    except ValueError:
+        raise BSFDocumentError(
+            f"Ungueltiger BSF-Endmodus '{end_mode}'. "
+            f"Erlaubt: {', '.join(BSF_END_MODE_VALUES)}."
+        )
     if not positions:
         raise BSFDocumentError("Keine Bearbeitungspositionen vorhanden.")
     if len(positions) > MAX_BSF_POSITIONS:
@@ -489,4 +521,5 @@ def build_bsf_document(
         positions=tuple(positions),
         programmer=programmer_norm,
         reference_z=float(reference_z),
+        end_mode=end_mode,
     )

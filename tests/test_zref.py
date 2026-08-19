@@ -306,9 +306,12 @@ class TestBsfGuiZref(unittest.TestCase):
         cls.root.destroy()
 
     def setUp(self):
+        from bsf_chain import BSF_END_MODE_STANDALONE, bsf_end_mode_label
         app = self.app
         app.mode_var.set(MODE_BSF)
         app.on_mode_change(None)
+        # Tests pruefen M30 im Output → explizit STANDALONE setzen
+        app.bsf_end_mode_var.set(bsf_end_mode_label(BSF_END_MODE_STANDALONE))
         app.position_mode_var.set("Einzelposition")
         app.on_position_mode_change(None)
         app.z0_var.set("Z0 ist Unterkante Bund")

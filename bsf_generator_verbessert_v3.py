@@ -65,6 +65,17 @@ from bgf_chain import (
     skip_over_local_subprogram_line,
     validate_bgf_end_mode,
 )
+from bsf_chain import (
+    BSF_END_MODE_CHAIN,
+    BSF_END_MODE_STANDALONE,
+    BSF_END_LABEL,
+    BSF_END_MODE_HELP,
+    bsf_end_mode_label,
+    bsf_end_mode_from_label,
+    bsf_end_mode_comment,
+    final_bsf_end_lines,
+    validate_bsf_end_mode,
+)
 from bgf_surface import (
     DEFAULT_APPROACH_CLEARANCE,
     absolute_from_surface,
@@ -334,6 +345,7 @@ class BSFGeneratorGUI:
         self._tool_num_var = tk.StringVar(value="8")
         self.programmer_var = tk.StringVar(value="")
         self.bgf_end_mode_var = tk.StringVar(value=bgf_end_mode_label(BGF_END_MODE_CHAIN))
+        self.bsf_end_mode_var = tk.StringVar(value=bsf_end_mode_label(BSF_END_MODE_CHAIN))
 
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
@@ -915,6 +927,27 @@ class BSFGeneratorGUI:
         )
         self._bgf_end_mode_help.grid(row=3, column=2, columnspan=4, sticky=tk.W, pady=2)
 
+        self._bsf_end_mode_label = ttk.Label(frame, text="Programmende:")
+        self._bsf_end_mode_label.grid(row=4, column=0, sticky=tk.W, pady=2, padx=(0, 4))
+        self.bsf_end_mode_combo = ttk.Combobox(
+            frame,
+            textvariable=self.bsf_end_mode_var,
+            values=[
+                bsf_end_mode_label(BSF_END_MODE_CHAIN),
+                bsf_end_mode_label(BSF_END_MODE_STANDALONE),
+            ],
+            state="readonly",
+            width=24,
+        )
+        self.bsf_end_mode_combo.grid(row=4, column=1, sticky=tk.W, pady=2, padx=(0, 16))
+        self.entries["bsf_end_mode"] = self.bsf_end_mode_combo
+        self._bsf_end_mode_help = ttk.Label(
+            frame,
+            text=BSF_END_MODE_HELP,
+            font=("Segoe UI", 8),
+        )
+        self._bsf_end_mode_help.grid(row=4, column=2, columnspan=4, sticky=tk.W, pady=2)
+
         # Alias: frueheres practice_frame / input_frame
         self.practice_frame = frame
         self.input_frame = frame
@@ -988,6 +1021,8 @@ class BSFGeneratorGUI:
             self.reduce_approach_var,
             self.m_activate_var,
             self.m_deactivate_var,
+            self.bgf_end_mode_var,
+            self.bsf_end_mode_var,
         ):
             var.trace_add("write", lambda *_args: self.refresh_nc_output_status())
 
@@ -1480,6 +1515,9 @@ class BSFGeneratorGUI:
             self._bgf_end_mode_label.grid()
             self.bgf_end_mode_combo.grid()
             self._bgf_end_mode_help.grid()
+            self._bsf_end_mode_label.grid_remove()
+            self.bsf_end_mode_combo.grid_remove()
+            self._bsf_end_mode_help.grid_remove()
             if self.entries.get("program_name"):
                 current = self.entries["program_name"].get().strip()
                 if current in ("", "BSF_RUECKWAERTS"):
@@ -1494,6 +1532,9 @@ class BSFGeneratorGUI:
             self._bgf_end_mode_label.grid_remove()
             self.bgf_end_mode_combo.grid_remove()
             self._bgf_end_mode_help.grid_remove()
+            self._bsf_end_mode_label.grid()
+            self.bsf_end_mode_combo.grid()
+            self._bsf_end_mode_help.grid()
             if self.entries.get("program_name"):
                 current = self.entries["program_name"].get().strip()
                 if current in ("", "BGF_TK"):
@@ -1856,6 +1897,7 @@ class BSFGeneratorGUI:
             end_safe_z=_entry_float("end_safe_z", "End-Sicherheits-Z"),
             positions=self.bsf_coord_rows,
             programmer=programmer,
+            end_mode=self.get_bsf_end_mode(),
         )
 
     def _snapshot_bsf_project(self) -> dict:
@@ -1885,6 +1927,7 @@ class BSFGeneratorGUI:
             "m_act_custom": self.m_activate_custom.get(),
             "m_deact": self.m_deactivate_var.get(),
             "m_deact_custom": self.m_deactivate_custom.get(),
+            "bsf_end_mode": self.bsf_end_mode_var.get(),
         }
 
     def _restore_bsf_project(self, snapshot: dict) -> None:
@@ -1919,6 +1962,8 @@ class BSFGeneratorGUI:
         self.m_deactivate_custom.delete(0, tk.END)
         self.m_deactivate_custom.insert(0, snapshot["m_deact_custom"])
         self.on_m_deactivate_change(None)
+        if "bsf_end_mode" in snapshot:
+            self.bsf_end_mode_var.set(snapshot["bsf_end_mode"])
         self.bsf_coord_rows = list(snapshot["rows"])
         self.position_mode_var.set(snapshot["position_mode"])
         self.on_position_mode_change(None)
@@ -1961,6 +2006,7 @@ class BSFGeneratorGUI:
         self.m_deactivate_custom.delete(0, tk.END)
         self.m_deactivate_custom.insert(0, doc.deactivate_custom)
         self.on_m_deactivate_change(None)
+        self.bsf_end_mode_var.set(bsf_end_mode_label(doc.end_mode))
         self.bsf_coord_rows = list(doc.positions)
         self.position_mode_var.set("Koordinatenliste")
         self.on_position_mode_change(None)
@@ -3240,6 +3286,14 @@ class BSFGeneratorGUI:
         programmed["z0_is_flange_bottom"] = z0_is_flange_bottom
         return programmed
 
+    def get_bsf_end_mode(self) -> str:
+        """Aktuellen BSF-Endmodus aus GUI-Variable lesen und validieren."""
+        raw = self.bsf_end_mode_var.get()
+        try:
+            return bsf_end_mode_from_label(raw)
+        except ValueError:
+            return validate_bsf_end_mode(raw)
+
     def generate_bsf_code(self) -> None:
         common = self.validate_common()
         if not common:
@@ -3273,6 +3327,7 @@ class BSFGeneratorGUI:
         m_act, m_deact = self.get_m_commands()
         position_mode = self.get_position_mode()
         blade = z_values["tool_profile"]
+        end_mode = self.get_bsf_end_mode()
 
         code: List[str] = []
         code.append(f"BEGIN PGM {program_name} MM")
@@ -3280,6 +3335,7 @@ class BSFGeneratorGUI:
         if programmer_line:
             code.append(programmer_line)
         code.append("; HEULE BSF Rueckwaertssenken - Nullpunkt/Z-Werte vor Einsatz pruefen")
+        code.append(bsf_end_mode_comment(end_mode))
         code.append(f"; WERKZEUG: {blade.designation}")
         code.append(f"; VERMESSUNG: {MEASUREMENT_NC_COMMENT}")
         code.append(f"; VERMESSFLAECHE -> SCHNEIDE: +{blade.measurement_face_to_cutting_edge_mm:.3f} MM")
@@ -3294,6 +3350,8 @@ class BSFGeneratorGUI:
         code.append(f"TOOL CALL {tool_num} Z S{spindle_speed}")
         code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX")
         code.append("")
+
+        end_lines = final_bsf_end_lines(common["end_safe_z"], end_mode, fmt_axis)
 
         if position_mode == PositionMode.SINGLE:
             xy = self.get_single_xy()
@@ -3313,7 +3371,7 @@ class BSFGeneratorGUI:
                     activation_speed_rpm=blade.activation_speed_rpm,
                 )
             )
-            code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX M30")
+            code.extend(end_lines)
             code.append(f"END PGM {program_name} MM")
         elif position_mode == PositionMode.COORDINATES:
             positions = self._validated_bsf_coord_positions()
@@ -3336,13 +3394,14 @@ class BSFGeneratorGUI:
                     fmt_axis=fmt_axis,
                 )
             )
-            code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX M30")
+            code.extend(end_lines)
             code.append(f"END PGM {program_name} MM")
         else:
+            # Teilkreis: Guard-Sprung ueber LBL 100, dann LBL 999-Endblock
             code.append("; --- TEILKREIS ---")
             code.append(f"L {fmt_axis('Z', common['safe_z'])} R0 FMAX")
             self.add_counted_circle_loop(code, common, sub_label=100)
-            code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX M30")
+            code.append(f"FN 9: IF +0 EQU +0 GOTO LBL {BSF_END_LABEL} ; Endblock anspringen")
             code.append("")
             code.append("LBL 100 ; Unterprogramm BSF auf aktueller XY-Position")
             code.extend(
@@ -3357,6 +3416,9 @@ class BSFGeneratorGUI:
                 )
             )
             code.append("LBL 0")
+            code.append("")
+            code.append(f"LBL {BSF_END_LABEL} ; Programmende BSF")
+            code.extend(end_lines)
             code.append(f"END PGM {program_name} MM")
 
         self.set_output(code)
