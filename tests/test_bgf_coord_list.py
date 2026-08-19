@@ -257,6 +257,8 @@ class TestSurfaceZNc(unittest.TestCase):
             BGFCoordinatePosition(0, 0, 0.0, tpl),
             BGFCoordinatePosition(100, 50, 35.0, tpl),
         ]
+        self.app.entries["raw_stock_top_z"].delete(0, "end")
+        self.app.entries["raw_stock_top_z"].insert(0, "35")
         self.app.generate_bgf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("L Z-27.8700 F1348 M", code)

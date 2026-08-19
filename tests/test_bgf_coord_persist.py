@@ -267,6 +267,8 @@ class TestGuiPersistence(unittest.TestCase):
             BGFCoordinatePosition(0, 0, 0, 20.0),
             BGFCoordinatePosition(100, 50, 35.0, 15.0),
         ]
+        self.app.entries["raw_stock_top_z"].delete(0, "end")
+        self.app.entries["raw_stock_top_z"].insert(0, "35")
         self.app.generate_bgf_code()
         before = self.app.output_text.get("1.0", "end")
 

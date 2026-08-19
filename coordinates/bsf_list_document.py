@@ -83,6 +83,7 @@ class BSFPositionListDocument:
     positions: Tuple[BSFCoordinatePosition, ...] = field(default_factory=tuple)
     programmer: str = ""
     reference_z: float = 0.0
+    raw_stock_top_z: float = 0.0
 
     @property
     def format_name(self) -> str:
@@ -193,6 +194,7 @@ def document_to_dict(doc: BSFPositionListDocument) -> Dict[str, Any]:
             "tool_number": doc.tool_number,
             "blank_size": doc.blank_size,
             "blank_height": doc.blank_height,
+            "raw_stock_top_z": doc.raw_stock_top_z,
         },
         "workpiece": {
             "z_reference": doc.z_reference,
@@ -251,6 +253,7 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         raise BSFDocumentError("Werkzeugnummer T muss groesser 0 sein.")
     blank_size = _require_finite(program.get("blank_size", 1000.0), "program.blank_size")
     blank_height = _require_finite(program.get("blank_height", 60.0), "program.blank_height")
+    raw_stock_top_z = _require_finite(program.get("raw_stock_top_z", 0.0), "program.raw_stock_top_z")
 
     workpiece = data.get("workpiece")
     if not isinstance(workpiece, dict):
@@ -340,6 +343,7 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         tool_number=tool_number,
         blank_size=blank_size,
         blank_height=blank_height,
+        raw_stock_top_z=raw_stock_top_z,
         z_reference=z_reference,
         tool_profile_key=tool_profile_key,
         reference_z=reference_z,
@@ -420,6 +424,7 @@ def build_bsf_document(
     positions: Sequence[BSFCoordinatePosition],
     programmer: str = "",
     reference_z: float = 0.0,
+    raw_stock_top_z: float = 0.0,
 ) -> BSFPositionListDocument:
     if not positions:
         raise BSFDocumentError("Keine Bearbeitungspositionen vorhanden.")
@@ -453,6 +458,7 @@ def build_bsf_document(
         ("End-Sicherheits-Z", end_safe_z),
         ("Rohteil-Kantenlaenge", blank_size),
         ("Rohteil-Hoehe", blank_height),
+        ("Rohteil-Oberkante Z", raw_stock_top_z),
         ("Z-Lage Bezugsebene", reference_z),
     ):
         if not math.isfinite(value):
@@ -463,6 +469,7 @@ def build_bsf_document(
         tool_number=int(tool_number),
         blank_size=float(blank_size),
         blank_height=float(blank_height),
+        raw_stock_top_z=float(raw_stock_top_z),
         z_reference=z_reference,
         tool_profile_key=tool_profile_key,
         bund_thickness=float(bund_thickness),

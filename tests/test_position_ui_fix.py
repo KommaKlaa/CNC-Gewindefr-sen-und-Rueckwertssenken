@@ -54,6 +54,8 @@ class TestPositionComboUiFix(unittest.TestCase):
         for key, val in (("single_x", "100"), ("single_y", "50"), ("single_surface_z", "35")):
             self.app.entries[key].delete(0, "end")
             self.app.entries[key].insert(0, val)
+        self.app.entries["raw_stock_top_z"].delete(0, "end")
+        self.app.entries["raw_stock_top_z"].insert(0, "35")
         self.app.generate_bgf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("L X+100.0000 Y+50.0000 Z+36.0000 R0 FMAX M13", code)

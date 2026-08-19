@@ -101,6 +101,17 @@ from app_info import APP_NAME
 from runtime_smoke import schedule_runtime_smoke_if_requested
 from safety_notice import ensure_startup_safety_notice, show_safety_notice
 from nc_programmer import ProgrammerError, normalize_programmer, programmer_comment_line
+from nc_state import (
+    NcOutputGuard,
+    STATUS_CURRENT_TEXT,
+    STATUS_STALE_TEXT,
+    STALE_ACTION_MESSAGE,
+)
+from stock_z import (
+    SURFACE_OUTSIDE_STOCK_MESSAGE,
+    all_surfaces_inside_stock,
+    blk_form_z_extents,
+)
 from ui.about import open_about_window as show_about_dialog
 from ui import MODE_BGF, MODE_BSF, POSITION_LABELS_BGF, POSITION_LABELS_BSF, ScrollableFrame
 from ui.visibility import hide_grid, hide_pack, is_mapped, show_grid, show_pack
@@ -321,6 +332,8 @@ class BSFGeneratorGUI:
         self._bgf_preview_window = None
         self._bsf_help_window = None
         self._bgf_help_window = None
+        self.nc_guard = NcOutputGuard()
+        self._nc_status_label = None
 
         self.create_header()
         self._create_menubar()
@@ -348,8 +361,10 @@ class BSFGeneratorGUI:
         self.create_common_parameters()
         self.create_buttons()
         self.create_output_field()
+        self._install_nc_state_watchers()
         self.on_mode_change(None)
         self.on_position_mode_change(None)
+        self.refresh_nc_output_status()
         schedule_runtime_smoke_if_requested(self)
 
     # ------------------------------------------------------------------
@@ -844,8 +859,9 @@ class BSFGeneratorGUI:
             (0, 0, "Werkzeugnummer T:", "tool_num", "8"),
             (0, 2, "Rohteil-Kantenlaenge (mm):", "blank_size", "1000"),
             (0, 4, "Rohteil-Hoehe Z (mm):", "blank_height", "60"),
-            (1, 0, "Sicherheits-Z zwischen Positionen:", "safe_z", "100"),
-            (1, 2, "End-Sicherheits-Z:", "end_safe_z", "200"),
+            (1, 0, "Rohteil-Oberkante Z [mm]:", "raw_stock_top_z", "0.000"),
+            (1, 2, "Sicherheits-Z zwischen Positionen:", "safe_z", "100"),
+            (1, 4, "End-Sicherheits-Z:", "end_safe_z", "200"),
             (2, 0, "Programmname:", "program_name", "BGF_TK"),
             (2, 2, "Programmierer:", "programmer", ""),
         ]
@@ -881,6 +897,16 @@ class BSFGeneratorGUI:
         output_frame = ttk.LabelFrame(self.bottom_pane, text="Generierter iTNC 530 Klartext-Code", padding=10)
         output_frame.pack(fill=tk.BOTH, expand=True, pady=2)
 
+        self._nc_status_label = tk.Label(
+            output_frame,
+            text="Kein NC-Code erzeugt",
+            anchor=tk.W,
+            bg=self.bg_color,
+            fg="#7f8c8d",
+            font=("Segoe UI", 9, "bold"),
+        )
+        self._nc_status_label.pack(fill=tk.X, pady=(0, 6))
+
         scrollbar_y = ttk.Scrollbar(output_frame, orient=tk.VERTICAL)
         scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
         scrollbar_x = ttk.Scrollbar(output_frame, orient=tk.HORIZONTAL)
@@ -901,6 +927,57 @@ class BSFGeneratorGUI:
         self.output_text.pack(fill=tk.BOTH, expand=True)
         scrollbar_y.config(command=self.output_text.yview)
         scrollbar_x.config(command=self.output_text.xview)
+
+    def _install_nc_state_watchers(self) -> None:
+        def _on_change(event=None):
+            self.refresh_nc_output_status()
+
+        for widget in list(self.entries.values()):
+            widget.bind("<KeyRelease>", _on_change, add="+")
+            widget.bind("<FocusOut>", _on_change, add="+")
+        for extra in (self.m_activate_custom, self.m_deactivate_custom):
+            extra.bind("<KeyRelease>", _on_change, add="+")
+            extra.bind("<FocusOut>", _on_change, add="+")
+        for var in (
+            self.mode_var,
+            self.position_mode_var,
+            self.programmer_var,
+            self._tool_num_var,
+            self.bgf_size_var,
+            self.output_tool_def_var,
+            self.bsf_tool_profile_var,
+            self.z0_var,
+            self.reduce_approach_var,
+            self.m_activate_var,
+            self.m_deactivate_var,
+        ):
+            var.trace_add("write", lambda *_args: self.refresh_nc_output_status())
+
+    def refresh_nc_output_status(self, event=None) -> None:
+        label = getattr(self, "_nc_status_label", None)
+        if label is None:
+            return
+        output = ""
+        if getattr(self, "output_text", None) is not None:
+            output = self.output_text.get("1.0", tk.END)
+        text = self.nc_guard.status_text(self, output_text=output)
+        label.config(text=text)
+        if text == STATUS_CURRENT_TEXT:
+            label.config(fg="#1e8449")
+        elif text == STATUS_STALE_TEXT:
+            label.config(fg="#c0392b")
+        else:
+            label.config(fg="#7f8c8d")
+
+    def _require_current_nc_for_output(self) -> Optional[str]:
+        code = self.output_text.get("1.0", tk.END).strip()
+        if not code:
+            messagebox.showwarning("Warnung", "Kein NC-Code vorhanden.")
+            return None
+        if not self.nc_guard.is_current(self, output_text=code):
+            messagebox.showerror("NC-Code veraltet", STALE_ACTION_MESSAGE)
+            return None
+        return code
 
     def open_bgf_positions_preview(self) -> None:
         """Oeffnet read-only XY-Positionsvorschau (BGF und BSF)."""
@@ -1376,6 +1453,7 @@ class BSFGeneratorGUI:
 
         self.update_bgf_nutzlaenge_info()
         self.on_position_mode_change(None)
+        self.refresh_nc_output_status()
 
     def _set_position_combo_values(self, values: tuple) -> None:
         self._position_combo_values = values
@@ -1424,6 +1502,7 @@ class BSFGeneratorGUI:
             show_grid(self.coord_list_frame, row=1, column=0, columnspan=6, sticky=tk.EW, pady=(8, 0))
             self.position_frame.columnconfigure(0, weight=1)
             self._show_coord_list_for_mode()
+        self.refresh_nc_output_status()
 
     def _show_coord_list_for_mode(self) -> None:
         hide_pack(self.bgf_coord_inner)
@@ -1468,6 +1547,7 @@ class BSFGeneratorGUI:
                     self._position_status_label(pos),
                 ),
             )
+        self.refresh_nc_output_status()
 
     def coord_add_row(self) -> None:
         if self.mode_var.get() != "Bohrgewindefraesen (BGF)":
@@ -1554,6 +1634,7 @@ class BSFGeneratorGUI:
                     bsf_position_status_label(pos, self.bsf_coord_rows),
                 ),
             )
+        self.refresh_nc_output_status()
 
     def bsf_coord_add_row(self) -> None:
         dialog = _XYPositionDialog(self.root, title="Position hinzufuegen")
@@ -1702,6 +1783,7 @@ class BSFGeneratorGUI:
             tool_number=_entry_int("tool_num", "Werkzeug-Nummer T"),
             blank_size=_entry_float("blank_size", "Rohteil-Kantenlaenge"),
             blank_height=_entry_float("blank_height", "Rohteil-Hoehe"),
+            raw_stock_top_z=_entry_float("raw_stock_top_z", "Rohteil-Oberkante Z"),
             z_reference=z_reference_from_label(self.z0_var.get()),
             reference_z=_entry_float("bsf_reference_z", "Z-Lage Bezugsebene"),
             tool_profile_key=tool_profile.key,
@@ -1735,6 +1817,7 @@ class BSFGeneratorGUI:
             "tool": self.entries["tool_num"].get(),
             "blank_size": self.entries["blank_size"].get(),
             "blank_height": self.entries["blank_height"].get(),
+            "raw_stock_top_z": self.entries["raw_stock_top_z"].get(),
             "safe_z": self.entries["safe_z"].get(),
             "end_safe_z": self.entries["end_safe_z"].get(),
             "bund": self.entries["bund_thickness"].get(),
@@ -1761,6 +1844,7 @@ class BSFGeneratorGUI:
         self._set_entry_value("tool_num", snapshot["tool"])
         self._set_entry_value("blank_size", snapshot["blank_size"])
         self._set_entry_value("blank_height", snapshot["blank_height"])
+        self._set_entry_value("raw_stock_top_z", snapshot.get("raw_stock_top_z", "0.000"))
         self._set_entry_value("safe_z", snapshot["safe_z"])
         self._set_entry_value("end_safe_z", snapshot["end_safe_z"])
         self._set_entry_value("bund_thickness", snapshot["bund"])
@@ -1798,6 +1882,7 @@ class BSFGeneratorGUI:
         self._set_entry_value("tool_num", str(doc.tool_number))
         self._set_entry_value("blank_size", f"{doc.blank_size:g}")
         self._set_entry_value("blank_height", f"{doc.blank_height:g}")
+        self._set_entry_value("raw_stock_top_z", f"{doc.raw_stock_top_z:g}")
         self._set_entry_value("safe_z", f"{doc.safe_z:g}")
         self._set_entry_value("end_safe_z", f"{doc.end_safe_z:g}")
         self._set_entry_value("bund_thickness", f"{doc.bund_thickness:g}")
@@ -2598,6 +2683,7 @@ class BSFGeneratorGUI:
 
         self.update_bgf_nutzlaenge_info()
         self.update_bgf_depth_status()
+        self.refresh_nc_output_status()
 
     def on_m_activate_change(self, event) -> None:
         state = "normal" if self.m_activate_var.get() == "Freitext / Eigener M-Befehl" else "disabled"
@@ -2616,6 +2702,7 @@ class BSFGeneratorGUI:
             if "blade_thickness" in self.entries:
                 self.entries["blade_thickness"].delete(0, tk.END)
             self.blade_measurement_var.set(MEASUREMENT_LABEL)
+            self.refresh_nc_output_status()
             return
         self.bsf_measurement_face_to_edge_value.set(f"{profile.measurement_face_to_cutting_edge_mm:.3f} mm")
         if "blade_thickness" in self.entries:
@@ -2626,6 +2713,7 @@ class BSFGeneratorGUI:
             self.bsf_activation_speed_value.set("—")
         else:
             self.bsf_activation_speed_value.set(f"{profile.activation_speed_rpm:d} U/min")
+        self.refresh_nc_output_status()
 
     # ------------------------------------------------------------------
     # Eingabe / Validierung
@@ -2658,10 +2746,23 @@ class BSFGeneratorGUI:
         tool_num = self.get_int_value("tool_num", "Werkzeug-Nummer")
         blank_size = self.get_float_value("blank_size", "Rohteil-Kantenlaenge")
         blank_height = self.get_float_value("blank_height", "Rohteil-Hoehe")
+        raw_stock_top_z = self.get_float_value("raw_stock_top_z", "Rohteil-Oberkante Z")
         safe_z = self.get_float_value("safe_z", "Sicherheits-Z")
         end_safe_z = self.get_float_value("end_safe_z", "End-Sicherheits-Z")
 
-        values = [diameter, count, start_angle, center_x, center_y, tool_num, blank_size, blank_height, safe_z, end_safe_z]
+        values = [
+            diameter,
+            count,
+            start_angle,
+            center_x,
+            center_y,
+            tool_num,
+            blank_size,
+            blank_height,
+            raw_stock_top_z,
+            safe_z,
+            end_safe_z,
+        ]
         if any(v is None for v in values):
             return None
         if diameter <= 0:
@@ -2672,6 +2773,15 @@ class BSFGeneratorGUI:
             return None
         if tool_num <= 0:
             messagebox.showerror("Fehler", "Werkzeug-Nummer muss groesser 0 sein.")
+            return None
+        if not math.isfinite(blank_size) or blank_size <= 0:
+            messagebox.showerror("Fehler", "Rohteil-Kantenlaenge muss eine endliche Zahl groesser 0 sein.")
+            return None
+        if not math.isfinite(blank_height) or blank_height <= 0:
+            messagebox.showerror("Fehler", "Rohteil-Hoehe Z muss eine endliche Zahl groesser 0 sein.")
+            return None
+        if not math.isfinite(raw_stock_top_z):
+            messagebox.showerror("Fehler", "Rohteil-Oberkante Z muss eine endliche Zahl sein.")
             return None
         if safe_z <= 0 or end_safe_z <= 0:
             messagebox.showwarning("Warnung", "Sicherheits-Z ist nicht positiv. Bitte Kollisionsfreiheit pruefen.")
@@ -2691,6 +2801,7 @@ class BSFGeneratorGUI:
             "tool_num": tool_num,
             "blank_size": blank_size,
             "blank_height": blank_height,
+            "raw_stock_top_z": raw_stock_top_z,
             "safe_z": safe_z,
             "end_safe_z": end_safe_z,
             "program_name": clean_program_name(self.entries["program_name"].get(), "NC_PROGRAMM"),
@@ -2716,6 +2827,8 @@ class BSFGeneratorGUI:
     def set_output(self, code: List[str]) -> None:
         self.output_text.delete("1.0", tk.END)
         self.output_text.insert(tk.END, "\n".join(code))
+        self.nc_guard.mark_generated(self)
+        self.refresh_nc_output_status()
 
     # ------------------------------------------------------------------
     # Code-Erzeugung allgemein
@@ -2727,27 +2840,57 @@ class BSFGeneratorGUI:
         else:
             self.generate_bsf_code()
 
-    def add_block_form(self, code: List[str], common: dict, bgf_mode: bool, z_origin: float = 0.0) -> None:
+    def add_block_form(self, code: List[str], common: dict, bgf_mode: bool = True, z_origin: float = 0.0) -> None:
+        """BLK FORM aus Rohteil-Oberkante und Rohteil-Hoehe.
+
+        surface_z / BSF reference_z fliessen nicht ein. z_origin bleibt ungenutzt
+        (Signatur kompatibel). bgf_mode ebenfalls ohne Z-Einfluss.
+        """
         half = common["blank_size"] / 2.0
-        height = abs(common["blank_height"])
-        if bgf_mode:
-            z_min, z_max = z_origin - height, z_origin
-        else:
-            if self.z0_var.get() == "Z0 ist Unterkante Bund":
-                z_min, z_max = z_origin, z_origin + height
-            else:
-                z_min, z_max = z_origin - height, z_origin
+        z_min, z_max = blk_form_z_extents(common["raw_stock_top_z"], common["blank_height"])
+        _ = (bgf_mode, z_origin)
 
-        code.append(f"BLK FORM 0.1 Z X{-half:.0f} Y{-half:.0f} {fmt_axis('Z', z_min)}")
-        code.append(f"BLK FORM 0.2 X{half:.0f} Y{half:.0f} {fmt_axis('Z', z_max)}")
+        code.append(
+            f"BLK FORM 0.1 Z {fmt_axis('X', -half)} {fmt_axis('Y', -half)} {fmt_axis('Z', z_min)}"
+        )
+        code.append(
+            f"BLK FORM 0.2 {fmt_axis('X', half)} {fmt_axis('Y', half)} {fmt_axis('Z', z_max)}"
+        )
 
-    def add_counted_circle_loop(self, code: List[str], common: dict, sub_label: int) -> None:
+    def _ensure_bgf_surfaces_inside_stock(self, surfaces: List[float], common: dict) -> bool:
+        top = common["raw_stock_top_z"]
+        height = common["blank_height"]
+        if all_surfaces_inside_stock(surfaces, top, height):
+            return True
+        messagebox.showerror("Rohteil", SURFACE_OUTSIDE_STOCK_MESSAGE)
+        return False
+
+    def add_counted_circle_loop(
+        self,
+        code: List[str],
+        common: dict,
+        sub_label: int,
+        *,
+        restore_pole_each_iteration: bool = False,
+    ) -> None:
+        """Teilkreis-Schleife mit Q2-Zaehler.
+
+        restore_pole_each_iteration=True: absolutes CC unmittelbar vor jedem LP.
+        Noetig, wenn das Unterprogramm den Heidenhain-Pol (CC) veraendert.
+        """
         step = 360.0 / common["count"]
         radius = common["diameter"] / 2.0
-        code.append(f"CC {fmt_axis('X', common['center_x'])} {fmt_axis('Y', common['center_y'])} ; Teilkreis-Mitte / Pol")
+        pole = (
+            f"CC {fmt_axis('X', common['center_x'])} {fmt_axis('Y', common['center_y'])} "
+            "; Teilkreis-Mitte / Pol"
+        )
+        if not restore_pole_each_iteration:
+            code.append(pole)
         code.append(f"Q1 = {fmt_q(common['start_angle'])} ; Startwinkel")
         code.append("Q2 = +0 ; Bohrungszaehler")
         code.append("LBL 1 ; Schleifenanfang Teilkreis")
+        if restore_pole_each_iteration:
+            code.append(pole)
         code.append(f"LP PR+{radius:.4f} PA+Q1 R0 FMAX ; Teilkreisposition")
         code.append(f"CALL LBL {sub_label} ; Bearbeitung aufrufen")
         code.append(f"Q1 = Q1 + {step:.4f} ; Naechster Winkel")
@@ -2800,11 +2943,13 @@ class BSFGeneratorGUI:
         z_origin = 0.0
         circle_surface_z = None
         single_pos = None
+        stock_surfaces: List[float] = []
         if position_mode == PositionMode.SINGLE:
             single_pos = self.get_single_position()
             if single_pos is None:
                 return
             z_origin = single_pos[2]
+            stock_surfaces = [z_origin]
             if not self._ensure_bgf_safe_above_approach(z_origin, clearance, common):
                 return
         elif position_mode == PositionMode.CIRCLE:
@@ -2812,9 +2957,14 @@ class BSFGeneratorGUI:
             if circle_surface_z is None:
                 return
             z_origin = circle_surface_z
+            stock_surfaces = [z_origin]
             if not self._ensure_bgf_safe_above_approach(z_origin, clearance, common):
                 return
-        self.add_block_form(code, common, bgf_mode=True, z_origin=z_origin)
+        elif position_mode == PositionMode.COORDINATES:
+            stock_surfaces = [pos.surface_z for pos in self.coord_rows]
+        if stock_surfaces and not self._ensure_bgf_surfaces_inside_stock(stock_surfaces, common):
+            return
+        self.add_block_form(code, common)
 
         if self.output_tool_def_var.get():
             code.append(f"TOOL DEF {common['tool_num']} L+0.0000 R+{data.radius:.4f} ; Laenge pruefen/anpassen")
@@ -2905,7 +3055,9 @@ class BSFGeneratorGUI:
             if depth_ev.depth_mode_label:
                 code.append(f"; Tiefenmodus: {depth_ev.depth_mode_label}")
             code.append(f"L {fmt_axis('Z', common['safe_z'])} R0 FMAX")
-            self.add_counted_circle_loop(code, common, sub_label=100)
+            self.add_counted_circle_loop(
+                code, common, sub_label=100, restore_pole_each_iteration=True
+            )
             code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX M30")
             code.append("")
             code.append("LBL 100 ; Unterprogramm BGF auf aktueller XY-Position")
@@ -3069,7 +3221,11 @@ class BSFGeneratorGUI:
         code.append(f"; OFFSET-RICHTUNG: {MEASUREMENT_OFFSET_DIRECTION.upper()} ZUR SPINDEL")
         if blade.activation_speed_rpm is not None:
             code.append(f"; HEULE AKTIVIERUNGSDREHZAHL: {blade.activation_speed_rpm:d} U/MIN")
-        self.add_block_form(code, common, bgf_mode=False, z_origin=z_values["reference_z"])
+        # BLK FORM nur aus raw_stock_top_z. BSF Domain-Safety (reference_z /
+        # TOP_EDGE vs. BOTTOM_EDGE innerhalb der Rohteil-Z-Ausdehnung) wird
+        # hier bewusst nicht automatisch geprueft: Bund- und Bezugssemantik
+        # sind nicht generisch auf Stock-Z abbildbar. PHASE BLKFORM.ZREF.1 #20.
+        self.add_block_form(code, common)
         code.append(f"TOOL CALL {tool_num} Z S{spindle_speed}")
         code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX")
         code.append("")
@@ -3188,18 +3344,16 @@ class BSFGeneratorGUI:
     # ------------------------------------------------------------------
 
     def copy_to_clipboard(self) -> None:
-        code = self.output_text.get("1.0", tk.END).strip()
+        code = self._require_current_nc_for_output()
         if not code:
-            messagebox.showwarning("Warnung", "Kein NC-Code vorhanden.")
             return
         self.root.clipboard_clear()
         self.root.clipboard_append(code)
         messagebox.showinfo("Info", "Code erfolgreich kopiert.")
 
     def export_to_h(self) -> None:
-        code = self.output_text.get("1.0", tk.END).strip()
+        code = self._require_current_nc_for_output()
         if not code:
-            messagebox.showwarning("Warnung", "Kein NC-Code vorhanden.")
             return
 
         default_name = clean_program_name(self.entries["program_name"].get(), "NC_PROGRAMM") + ".H"

@@ -225,6 +225,8 @@ class TestBgfGuiZref(unittest.TestCase):
 
     def _code(self, surface: str) -> str:
         _set_entry(self.app, "single_surface_z", surface)
+        sz = float(str(surface).replace(",", "."))
+        _set_entry(self.app, "raw_stock_top_z", f"{sz if sz > 0 else 0.0:g}")
         self.app.generate_bgf_code()
         return self.app.output_text.get("1.0", "end")
 
@@ -261,6 +263,7 @@ class TestBgfGuiZref(unittest.TestCase):
         app.position_mode_var.set("Teilkreis")
         app.on_position_mode_change(None)
         _set_entry(app, "circle_surface_z", "20")
+        _set_entry(app, "raw_stock_top_z", "20")
         app.generate_bgf_code()
         code = app.output_text.get("1.0", "end")
         self.assertIn("; --- TEILKREIS ---", code)
@@ -278,6 +281,7 @@ class TestBgfGuiZref(unittest.TestCase):
             BGFCoordinatePosition(100.0, 0.0, 25.0, 20.0, None),
             BGFCoordinatePosition(200.0, 0.0, -10.0, 20.0, None),
         ]
+        _set_entry(app, "raw_stock_top_z", "25")
         app.generate_bgf_code()
         code = app.output_text.get("1.0", "end")
         self.assertIn("surface_z=20", code)

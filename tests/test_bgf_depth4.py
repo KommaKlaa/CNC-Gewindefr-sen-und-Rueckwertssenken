@@ -220,6 +220,8 @@ class TestGuiDepth4(unittest.TestCase):
             BGFCoordinatePosition(100, 50, 0, 20.0),
             BGFCoordinatePosition(200, 100, 35, 15.0),
         ]
+        self.app.entries["raw_stock_top_z"].delete(0, "end")
+        self.app.entries["raw_stock_top_z"].insert(0, "35")
         result = validate_bgf_coordinate_list(
             self.app.coord_rows,
             self.app.get_bgf_depth_policy(),
