@@ -45,17 +45,25 @@ class TestSequenceRegression(unittest.TestCase):
 
     def test_bsf_sequence_core_steps_unchanged(self):
         import tkinter as tk
+        from types import SimpleNamespace
 
         root = tk.Tk()
         root.withdraw()
         app = gen.BSFGeneratorGUI(root)
         z_values = {"z_sink_finish": 1.5, "z_clearance": -3.0}
         common = {"safe_z": 100.0}
-        seq = app.get_bsf_sequence(z_values, 200.0, 0.5, "M7", "M9", common)
+        heule_pos = SimpleNamespace(
+            a_measurement_face_z=1.0,
+            x_measurement_face_z=-3.0,
+            b_measurement_face_z=-1.0,
+            c_measurement_face_z=0.5,
+            d_measurement_face_z=1.5,
+        )
+        seq = app.get_bsf_sequence(z_values, heule_pos, 200.0, 0.5, "M7", "M9", common)
         root.destroy()
-        self.assertEqual(seq[0], "M5 ; Spindel aus")
+        self.assertEqual(seq[0], "L Z+1.0000 R0 FMAX ; A vor Bohrung")
         self.assertIn("CYCL DEF 9.0 VERWEILZEIT", seq)
-        self.assertIn("L Z+1.0000 R0 FMAX M3 ; Spindel einschalten", seq)
+        self.assertIn("L Z-3.0000 R0 FMAX M3 ; Spindel einschalten an X", seq)
 
 
 class TestGuiModesRegression(unittest.TestCase):

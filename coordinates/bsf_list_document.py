@@ -2,6 +2,7 @@
 
 Version 2 speichert das gewaehlte HEULE-Werkzeugprofil ueber seinen stabilen Key.
 Version 3 erweitert das workpiece-Modell um raw_surface_z (optional).
+Version 4 erweitert das workpiece-Modell um deployment/entry Geometrie fuer HEULE-X/A.
 Legacy-Version 1 wird weiterhin geladen, aber ohne Auto-Mapping auf ein Profil.
 """
 
@@ -20,7 +21,7 @@ from nc_programmer import ProgrammerError, normalize_programmer
 from .bsf_position import BSFCoordinatePosition
 
 FORMAT_NAME = "HEULE_BSF_POSITION_LIST"
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 MAX_BSF_POSITIONS = 10_000
 MAX_FILE_BYTES = 5_000_000
 
@@ -87,6 +88,10 @@ class BSFPositionListDocument:
     reference_z: float = 0.0
     raw_stock_top_z: float = 0.0
     raw_surface_z: float | None = None
+    deployment_edge_z: float | None = None
+    x_safety_clearance: float = 2.0
+    entry_edge_z: float | None = None
+    entry_clearance: float = 1.0
     end_mode: str = BSF_END_MODE_CHAIN
 
     @property
@@ -207,6 +212,10 @@ def document_to_dict(doc: BSFPositionListDocument) -> Dict[str, Any]:
             "sink_finish": doc.sink_finish,
             "clearance": doc.clearance,
             "raw_surface_z": doc.raw_surface_z,
+            "deployment_edge_z": doc.deployment_edge_z,
+            "x_safety_clearance": doc.x_safety_clearance,
+            "entry_edge_z": doc.entry_edge_z,
+            "entry_clearance": doc.entry_clearance,
         },
         "tool": {
             "profile": doc.tool_profile_key,
@@ -282,6 +291,24 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
             raw_surface_z = _require_finite(raw_surface_raw, "workpiece.raw_surface_z")
     else:
         raw_surface_z = None
+    deployment_edge_z = (
+        _require_finite(workpiece.get("deployment_edge_z"), "workpiece.deployment_edge_z")
+        if "deployment_edge_z" in workpiece and workpiece.get("deployment_edge_z") is not None
+        else None
+    )
+    entry_edge_z = (
+        _require_finite(workpiece.get("entry_edge_z"), "workpiece.entry_edge_z")
+        if "entry_edge_z" in workpiece and workpiece.get("entry_edge_z") is not None
+        else None
+    )
+    if "x_safety_clearance" in workpiece:
+        x_safety_clearance = _require_finite(workpiece.get("x_safety_clearance"), "workpiece.x_safety_clearance")
+    else:
+        x_safety_clearance = 2.0
+    if "entry_clearance" in workpiece:
+        entry_clearance = _require_finite(workpiece.get("entry_clearance"), "workpiece.entry_clearance")
+    else:
+        entry_clearance = 1.0
 
     tool_profile_key: str | None = None
     if version >= 2:
@@ -398,6 +425,10 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         positions=positions,
         programmer=programmer,
         raw_surface_z=raw_surface_z,
+        deployment_edge_z=deployment_edge_z,
+        x_safety_clearance=x_safety_clearance,
+        entry_edge_z=entry_edge_z,
+        entry_clearance=entry_clearance,
         end_mode=end_mode,
     )
 
@@ -462,10 +493,22 @@ def build_bsf_document(
     reference_z: float = 0.0,
     raw_stock_top_z: float = 0.0,
     raw_surface_z: float | None = None,
+    deployment_edge_z: float | None = None,
+    x_safety_clearance: float = 2.0,
+    entry_edge_z: float | None = None,
+    entry_clearance: float = 1.0,
     end_mode: str = BSF_END_MODE_CHAIN,
 ) -> BSFPositionListDocument:
     if raw_surface_z is not None and not math.isfinite(raw_surface_z):
         raise BSFDocumentError("Rohflaeche / Ist-Z ist nicht endlich.")
+    if deployment_edge_z is not None and not math.isfinite(deployment_edge_z):
+        raise BSFDocumentError("Ausklappkante Z ist nicht endlich.")
+    if entry_edge_z is not None and not math.isfinite(entry_edge_z):
+        raise BSFDocumentError("Bohrungs-Eintrittskante Z ist nicht endlich.")
+    if not math.isfinite(x_safety_clearance) or x_safety_clearance < 0:
+        raise BSFDocumentError("Ausklapp-Sicherheitsabstand X muss >= 0 sein.")
+    if not math.isfinite(entry_clearance) or entry_clearance < 0:
+        raise BSFDocumentError("Eintritts-Sicherheitsabstand A muss >= 0 sein.")
     try:
         end_mode = validate_bsf_end_mode(end_mode)
     except ValueError:
@@ -537,5 +580,9 @@ def build_bsf_document(
         programmer=programmer_norm,
         reference_z=float(reference_z),
         raw_surface_z=float(raw_surface_z) if raw_surface_z is not None else None,
+        deployment_edge_z=float(deployment_edge_z) if deployment_edge_z is not None else None,
+        x_safety_clearance=float(x_safety_clearance),
+        entry_edge_z=float(entry_edge_z) if entry_edge_z is not None else None,
+        entry_clearance=float(entry_clearance),
         end_mode=end_mode,
     )

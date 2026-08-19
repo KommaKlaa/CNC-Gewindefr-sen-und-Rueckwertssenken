@@ -61,6 +61,78 @@ class TestBsfWorkpieceGeometry(unittest.TestCase):
                 measurement_face_to_cutting_edge_mm=8.55,
             )
 
+    def test_profile_domain_supports_al_and_not_equal_hs(self):
+        from heule_bsf_tools import BSF_TOOL_PROFILES
+
+        c = BSF_TOOL_PROFILES["BSF_C_1000_050_10_5_23"]
+        e = BSF_TOOL_PROFILES["BSF_E_1350_050_16_5_14"]
+        self.assertAlmostEqual(c.deployment_length_al_mm, 20.250, places=3)
+        self.assertAlmostEqual(e.deployment_length_al_mm, 26.750, places=3)
+        self.assertNotEqual(c.deployment_length_al_mm, c.measurement_face_to_cutting_edge_mm)
+        self.assertNotEqual(e.deployment_length_al_mm, e.measurement_face_to_cutting_edge_mm)
+
+    def test_x_position_c_synthetic(self):
+        from bsf_workpiece_geometry import compute_heule_process_positions
+
+        pos = compute_heule_process_positions(
+            deployment_edge_z=60.0,
+            entry_edge_z=0.0,
+            target_cutting_edge_z=80.5,
+            measurement_face_to_cutting_edge_mm=8.55,
+            deployment_length_al_mm=20.250,
+            x_safety_clearance_mm=2.0,
+            entry_clearance_mm=1.0,
+        )
+        self.assertAlmostEqual(pos.x_measurement_face_z, 37.750, places=3)
+
+    def test_x_position_e_synthetic(self):
+        from bsf_workpiece_geometry import compute_heule_process_positions
+
+        pos = compute_heule_process_positions(
+            deployment_edge_z=60.0,
+            entry_edge_z=0.0,
+            target_cutting_edge_z=80.5,
+            measurement_face_to_cutting_edge_mm=11.4,
+            deployment_length_al_mm=26.750,
+            x_safety_clearance_mm=2.0,
+            entry_clearance_mm=1.0,
+        )
+        self.assertAlmostEqual(pos.x_measurement_face_z, 31.250, places=3)
+
+    def test_x_has_no_hs_double_offset(self):
+        from bsf_workpiece_geometry import compute_heule_process_positions
+
+        pos = compute_heule_process_positions(
+            deployment_edge_z=60.0,
+            entry_edge_z=0.0,
+            target_cutting_edge_z=80.5,
+            measurement_face_to_cutting_edge_mm=8.55,
+            deployment_length_al_mm=20.250,
+            x_safety_clearance_mm=2.0,
+            entry_clearance_mm=1.0,
+        )
+        self.assertAlmostEqual(pos.x_measurement_face_z, 60.0 - 20.250 - 2.0, places=3)
+
+    def test_heule_golden_example_geometry(self):
+        from bsf_workpiece_geometry import compute_heule_process_positions
+
+        # Herstellerbeispiel als Formelregression (Betrag)
+        # E=30, AL=22.5, safety=2.0, Hs=9.6, sink=8.0 -> X=54.5, B=40.6, C=39.35, D=31.6
+        pos = compute_heule_process_positions(
+            deployment_edge_z=-30.0,
+            entry_edge_z=0.0,
+            target_cutting_edge_z=-22.0,
+            measurement_face_to_cutting_edge_mm=9.6,
+            deployment_length_al_mm=22.5,
+            x_safety_clearance_mm=2.0,
+            entry_clearance_mm=1.0,
+            full_cut_overlap_mm=0.25,
+        )
+        self.assertAlmostEqual(abs(pos.x_measurement_face_z), 54.5, places=3)
+        self.assertAlmostEqual(abs(pos.b_measurement_face_z), 40.6, places=3)
+        self.assertAlmostEqual(abs(pos.c_measurement_face_z), 39.35, places=3)
+        self.assertAlmostEqual(abs(pos.d_measurement_face_z), 31.6, places=3)
+
 
 class TestBsfDocumentV3(unittest.TestCase):
     def _doc(self, **kwargs):
@@ -92,7 +164,7 @@ class TestBsfDocumentV3(unittest.TestCase):
         return build_bsf_document(**base)
 
     def test_json_version_3(self):
-        self.assertEqual(FORMAT_VERSION, 3)
+        self.assertEqual(FORMAT_VERSION, 4)
 
     def test_roundtrip_raw_surface(self):
         doc = self._doc(raw_surface_z=75.0)
@@ -211,5 +283,50 @@ class TestBsfRawSurfaceStale(unittest.TestCase):
         app.entries["raw_surface_z"].delete(0, "end")
         app.entries["raw_surface_z"].insert(0, "76")
         self.assertFalse(app.nc_guard.is_current(app, output_text=code))
+        root.destroy()
+
+
+class TestBsfHeuleSequence(unittest.TestCase):
+    def test_sequence_order_activation_at_x(self):
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        app = gen.BSFGeneratorGUI(root)
+        app.mode_var.set(MODE_BSF)
+        app.on_mode_change(None)
+        app.position_mode_var.set("Einzelposition")
+        app.on_position_mode_change(None)
+        app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
+        app.on_bsf_tool_profile_change()
+        for key, val in (
+            ("bund_thickness", "18"),
+            ("sink_depth", "20.5"),
+            ("clearance", "23"),
+            ("single_x", "0"),
+            ("single_y", "0"),
+            ("safe_z", "100"),
+            ("end_safe_z", "200"),
+            ("bsf_reference_z", "60"),
+            ("raw_surface_z", "75"),
+            ("deployment_edge_z", "60"),
+            ("x_safety_clearance", "2.0"),
+            ("entry_edge_z", "0"),
+            ("entry_clearance", "1.0"),
+            ("spindle_speed", "800"),
+            ("feed_rate", "60"),
+            ("dwell_time", "1.0"),
+        ):
+            app.entries[key].delete(0, "end")
+            app.entries[key].insert(0, val)
+        app.generate_bsf_code()
+        code = app.output_text.get("1.0", "end")
+        self.assertIn("X hinter Bohrung (AL+Sicherheit)", code)
+        self.assertNotIn("Z+61.0000", code)  # reference_z+1 Aktivierung entfernt
+        self.assertIn("Spindel einschalten an X", code)
+        self.assertIn("M5 ; Spindel aus", code)
+        self.assertIn("Messer einfahren / geschlossen halten", code)
+        self.assertIn("Messer freigeben / Druck aus", code)
+        self.assertIn("Zurueck nach X", code)
         root.destroy()
 

@@ -298,7 +298,7 @@ class TestProgrammerJson(unittest.TestCase):
             positions=[BSFCoordinatePosition(0, 0)],
             programmer="Max Mustermann",
         )
-        self.assertEqual(BSF_FORMAT_VERSION, 3)
+        self.assertEqual(BSF_FORMAT_VERSION, 4)
         payload = bsf_document_to_dict(doc)
         self.assertEqual(payload["program"]["programmer"], "Max Mustermann")
         with tempfile.TemporaryDirectory() as tmp:

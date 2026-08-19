@@ -18,6 +18,16 @@ class BSFWorkpieceGeometry:
     measurement_face_to_cutting_edge_mm: float
 
 
+@dataclass(frozen=True)
+class BSFHeuleProcessPositions:
+    a_measurement_face_z: float
+    x_measurement_face_z: float
+    b_measurement_face_z: float
+    c_measurement_face_z: float
+    d_measurement_face_z: float
+    x_clear_distance: float
+
+
 def parse_optional_finite_mm(text: str) -> Optional[float]:
     raw = (text or "").strip()
     if raw == "":
@@ -75,4 +85,67 @@ def build_workpiece_geometry(
         material_removal=material_removal,
         programmed_measurement_face_z=programmed_measurement_face_z,
         measurement_face_to_cutting_edge_mm=measurement_face_to_cutting_edge_mm,
+    )
+
+
+def compute_heule_process_positions(
+    *,
+    deployment_edge_z: float,
+    entry_edge_z: float,
+    target_cutting_edge_z: float,
+    measurement_face_to_cutting_edge_mm: float,
+    deployment_length_al_mm: float,
+    x_safety_clearance_mm: float,
+    entry_clearance_mm: float,
+    b_clearance_mm: float = 1.0,
+    full_cut_overlap_mm: float = 0.25,
+) -> BSFHeuleProcessPositions:
+    """Berechnet A/X/B/C/D fuer die programmierte Vermessflaeche.
+
+    Koordinatenmodell:
+    - Werkzeug kommt von +Z und faehrt in -Z durch die Bohrung.
+    - Rueckwaertssenken erfolgt in +Z Richtung.
+    """
+    for name, value in (
+        ("deployment_edge_z", deployment_edge_z),
+        ("entry_edge_z", entry_edge_z),
+        ("target_cutting_edge_z", target_cutting_edge_z),
+        ("measurement_face_to_cutting_edge_mm", measurement_face_to_cutting_edge_mm),
+        ("deployment_length_al_mm", deployment_length_al_mm),
+        ("x_safety_clearance_mm", x_safety_clearance_mm),
+        ("entry_clearance_mm", entry_clearance_mm),
+        ("b_clearance_mm", b_clearance_mm),
+        ("full_cut_overlap_mm", full_cut_overlap_mm),
+    ):
+        if not math.isfinite(value):
+            raise ValueError(f"{name} muss endlich sein.")
+    if deployment_length_al_mm <= 0:
+        raise ValueError("AL muss groesser 0 sein.")
+    if x_safety_clearance_mm < 0:
+        raise ValueError("Ausklapp-Sicherheitsabstand X muss >= 0 sein.")
+    if entry_clearance_mm < 0:
+        raise ValueError("Eintritts-Sicherheitsabstand A muss >= 0 sein.")
+
+    hs = measurement_face_to_cutting_edge_mm
+
+    # HEULE-X: X = E - AL - safety (auf Vermessflaeche, ohne Hs-Zusatzabzug)
+    x_face = deployment_edge_z - deployment_length_al_mm - x_safety_clearance_mm
+    a_face = entry_edge_z + entry_clearance_mm
+    b_face = deployment_edge_z - hs - b_clearance_mm
+    c_face = deployment_edge_z - hs + full_cut_overlap_mm
+    d_face = target_cutting_edge_z - hs
+    x_clear_distance = deployment_edge_z - x_face
+
+    if x_clear_distance < deployment_length_al_mm + x_safety_clearance_mm:
+        raise ValueError("Position X verletzt AL+Sicherheitsabstand.")
+    if not (x_face < b_face < c_face < d_face):
+        raise ValueError("Positionsinvariante verletzt: erwartet X < B < C < D.")
+
+    return BSFHeuleProcessPositions(
+        a_measurement_face_z=a_face,
+        x_measurement_face_z=x_face,
+        b_measurement_face_z=b_face,
+        c_measurement_face_z=c_face,
+        d_measurement_face_z=d_face,
+        x_clear_distance=x_clear_distance,
     )

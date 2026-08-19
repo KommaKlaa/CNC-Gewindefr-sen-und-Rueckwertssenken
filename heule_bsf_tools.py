@@ -21,6 +21,7 @@ class BSFToolProfile:
     designation: str
     family: str
     measurement_face_to_cutting_edge_mm: float
+    deployment_length_al_mm: Optional[float]
     activation_speed_rpm: Optional[int]
     measurement_model: str = MEASUREMENT_MODEL
 
@@ -31,6 +32,7 @@ BSF_TOOL_PROFILES: Dict[str, BSFToolProfile] = {
         designation="BSF-C-1000/050-10.5-23",
         family="BSF-C",
         measurement_face_to_cutting_edge_mm=8.55,
+        deployment_length_al_mm=20.250,
         activation_speed_rpm=2000,
     ),
     "BSF_E_1350_050_16_5_14": BSFToolProfile(
@@ -38,6 +40,7 @@ BSF_TOOL_PROFILES: Dict[str, BSFToolProfile] = {
         designation="BSF-E-1350/050-16.5-14",
         family="BSF-E",
         measurement_face_to_cutting_edge_mm=11.40,
+        deployment_length_al_mm=26.750,
         activation_speed_rpm=1500,
     ),
 }

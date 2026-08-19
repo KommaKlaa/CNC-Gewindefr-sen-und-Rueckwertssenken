@@ -338,8 +338,8 @@ class TestBsfGuiZref(unittest.TestCase):
         code = self._generate("0")
         wp = _workpiece_z_map(code)
         self.assertAlmostEqual(wp["Senken mit 50 Prozent"], 29.45, places=3)
-        self.assertAlmostEqual(wp["Durch den Bund tauchen"], -31.55, places=3)
-        self.assertEqual(wp["Spindel einschalten"], 1.0)
+        self.assertAlmostEqual(wp["Durch den Bund tauchen"], 14.75, places=3)
+        self.assertEqual(wp["Spindel einschalten"], 14.75)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", code)
         self.assertIn("L Z+200.0000 R0 FMAX M30", code)
         self.assertIn("L X+0.0000 Y+0.0000 Z+100.0000 R0 FMAX", code)
@@ -357,7 +357,7 @@ class TestBsfGuiZref(unittest.TestCase):
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", plus)
         self.assertIn("L Z+200.0000 R0 FMAX M30", plus)
         self.assertIn("L X+0.0000 Y+0.0000 Z+100.0000 R0 FMAX", plus)
-        self.assertEqual(z20["Spindel einschalten"], 21.0)
+        self.assertEqual(z20["Spindel einschalten"], 34.75)
         self.assertAlmostEqual(z20["Senken mit 50 Prozent"], 49.45, places=3)
 
     def test_minus20_shifts_workpiece_only(self):
@@ -368,7 +368,7 @@ class TestBsfGuiZref(unittest.TestCase):
         for key in z0:
             self.assertAlmostEqual(zm[key], z0[key] - 20.0)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", minus)
-        self.assertEqual(zm["Spindel einschalten"], -19.0)
+        self.assertEqual(zm["Spindel einschalten"], -5.25)
         self.assertAlmostEqual(zm["Senken mit 50 Prozent"], 9.45, places=3)
 
     def test_xy_m_feed_unchanged(self):
@@ -489,7 +489,7 @@ class TestBsfJsonReferenceZ(unittest.TestCase):
         self.assertEqual(payload["workpiece"]["reference_z"], 20.5)
         loaded = parse_document_dict(payload)
         self.assertEqual(loaded.reference_z, 20.5)
-        self.assertEqual(loaded.version, 3)
+        self.assertEqual(loaded.version, 4)
 
     def test_legacy_defaults_zero(self):
         payload = document_to_dict(self._doc())

@@ -114,7 +114,7 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("L Z+49.4500 R0 F30 ; Senken mit 50 Prozent Vorschub", code)
-        self.assertIn("L Z+21.0000 R0 FMAX S2000 M3 ; Spindel einschalten", code)
+        self.assertIn("L Z+34.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X", code)
         self.assertIn("TOOL CALL 8 Z S800", code)
 
     def test_reference_z_and_tool_e_generate_measurement_face_z(self):
@@ -123,7 +123,7 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("L Z+26.6000 R0 F30 ; Senken mit 50 Prozent Vorschub", code)
-        self.assertIn("L Z+1.0000 R0 FMAX S1500 M3 ; Spindel einschalten", code)
+        self.assertIn("L Z+8.2500 R0 FMAX S1500 M3 ; Spindel einschalten an X", code)
         self.assertIn("; HEULE AKTIVIERUNGSDREHZAHL: 1500 U/MIN", code)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", code)
 
@@ -134,7 +134,7 @@ class TestGuiBsfToolarch(unittest.TestCase):
         code = self.app.output_text.get("1.0", "end")
         motion = _motion_lines(code)
         self.assertIn("L Z+29.4500 R0 F30 ; Senken mit 50 Prozent Vorschub", motion)
-        self.assertIn("L Z+1.0000 R0 FMAX S2000 M3 ; Spindel einschalten", motion)
+        self.assertIn("L Z+14.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X", motion)
         comment_motion = [line for line in motion if not line.startswith(";")]
         self.assertTrue(all(re.match(r"^(L |TOOL CALL)", line) for line in comment_motion))
 
@@ -147,10 +147,10 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.on_bsf_tool_profile_change()
         self.app.generate_bsf_code()
         code_e = self.app.output_text.get("1.0", "end")
-        self.assertIn("S2000 M3 ; Spindel einschalten", code_c)
-        self.assertIn("S1500 M3 ; Spindel einschalten", code_e)
-        self.assertNotIn("S1500 M3 ; Spindel einschalten", code_c)
-        self.assertNotIn("S2000 M3 ; Spindel einschalten", code_e)
+        self.assertIn("S2000 M3 ; Spindel einschalten an X", code_c)
+        self.assertIn("S1500 M3 ; Spindel einschalten an X", code_e)
+        self.assertNotIn("S1500 M3 ; Spindel einschalten an X", code_c)
+        self.assertNotIn("S2000 M3 ; Spindel einschalten an X", code_e)
 
     def test_m_functions_unchanged(self):
         self.app.bsf_tool_profile_var.set(TOOL_C.designation)
@@ -158,8 +158,8 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("M5 ; Spindel aus", code)
-        self.assertIn("M7 ; Messer unten aktivieren", code)
-        self.assertIn("M9 ; Messer schliessen", code)
+        self.assertIn("M7 ; Messer einfahren / geschlossen halten", code)
+        self.assertIn("M9 ; Messer schliessen / Messer freigeben / Druck aus", code)
 
     def test_spindle_on_z_remains_reference_relative(self):
         self.assertEqual(spindle_on_z(0.0), 1.0)

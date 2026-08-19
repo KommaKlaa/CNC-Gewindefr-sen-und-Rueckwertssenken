@@ -531,6 +531,14 @@ def _bsf_nc(app) -> Dict[str, str]:
     app.entries["bsf_reference_z"].insert(0, "0")
     app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
     app.on_bsf_tool_profile_change()
+    app.entries["deployment_edge_z"].delete(0, "end")
+    app.entries["deployment_edge_z"].insert(0, "60")
+    app.entries["entry_edge_z"].delete(0, "end")
+    app.entries["entry_edge_z"].insert(0, "0")
+    app.entries["x_safety_clearance"].delete(0, "end")
+    app.entries["x_safety_clearance"].insert(0, "2")
+    app.entries["entry_clearance"].delete(0, "end")
+    app.entries["entry_clearance"].insert(0, "1")
     app.generate_bsf_code()
     code_c = app.output_text.get("1.0", "end")
     app.entries["bsf_reference_z"].delete(0, "end")
@@ -551,12 +559,12 @@ def _bsf_nc(app) -> Dict[str, str]:
         "has_begin": str("BEGIN PGM" in code_c),
         "has_m5": str("M5 ; Spindel aus" in code_c),
         "has_cycl9": str("CYCL DEF 9.1" in code_c),
-        "tool_c_activation": str("S2000 M3 ; Spindel einschalten" in code_c),
-        "tool_e_activation": str("S1500 M3 ; Spindel einschalten" in code_e),
+        "tool_c_activation": str("S2000 M3 ; Spindel einschalten an X" in code_c),
+        "tool_e_activation": str("S1500 M3 ; Spindel einschalten an X" in code_e),
         "process_speed_separate": str("TOOL CALL 8 Z S777" in code_c and "TOOL CALL 8 Z S777" in code_e),
-        "spindle_on_z_0": str("L Z+1.0000 R0 FMAX S2000 M3 ; Spindel einschalten" in code_c),
-        "spindle_on_z_plus20": str("L Z+21.0000 R0 FMAX S2000 M3 ; Spindel einschalten" in code_c_plus),
-        "spindle_on_z_minus20": str("L Z-19.0000 R0 FMAX S2000 M3 ; Spindel einschalten" in code_c_minus),
+        "activation_at_x_0": str("L Z+37.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c),
+        "activation_at_x_plus20": str("L Z+37.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c_plus),
+        "activation_at_x_minus20": str("L Z+37.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c_minus),
     }
 
 
@@ -574,12 +582,14 @@ def _bsf_endmode(app) -> Dict[str, str]:
         app.on_position_mode_change(None)
         for k, v in [
             ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.0"),
-            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
-            ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
+            ("bund_thickness", "18"), ("sink_depth", "20.5"), ("clearance", "23"),
+            ("bsf_reference_z", "60"), ("safe_z", "100"), ("end_safe_z", "200"),
             ("program_name", "BSF_SMOKE"), ("raw_stock_top_z", "0"),
             ("blank_height", "60"), ("blank_size", "1000"),
             ("diameter", "430"), ("start_angle", "0"),
             ("center_x", "0"), ("center_y", "0"), ("count", str(count)),
+            ("deployment_edge_z", "60"), ("entry_edge_z", "0"),
+            ("x_safety_clearance", "2"), ("entry_clearance", "1"),
         ]:
             app.entries[k].delete(0, "end")
             app.entries[k].insert(0, v)
@@ -619,6 +629,33 @@ def _bsf_endmode(app) -> Dict[str, str]:
         "BSF_ENDMODE_STALE": "PASS" if (was_current and became_stale) else "FAIL",
         "BSF_CHAIN_END_PGM_REACHABLE": "PASS" if chain_analysis["end_pgm_reachable"] else "FAIL",
         "BSF_STANDALONE_END_PGM": "PASS" if standalone_analysis["lbl999_i"] is not None else "FAIL",
+        "BSF_HEULE_AL_PROFILE": "PASS" if ("AL (AUSKLAPPLAENGE): +20.250 MM" in chain_code) else "FAIL",
+        "BSF_HEULE_X_POSITION": "PASS" if ("X hinter Bohrung (AL+Sicherheit)" in chain_code) else "FAIL",
+        "BSF_HEULE_X_NO_HS_DOUBLE_OFFSET": "PASS"
+        if ("L Z+37.7500 R0 FMAX ; Durch den Bund tauchen / X hinter Bohrung (AL+Sicherheit)" in chain_code)
+        else "FAIL",
+        "BSF_HEULE_SEQUENCE_ORDER": "PASS"
+        if (
+            chain_code.find("A vor Bohrung") < chain_code.find("X hinter Bohrung (AL+Sicherheit)")
+            < chain_code.find("Spindel einschalten an X")
+        )
+        else "FAIL",
+        "BSF_HEULE_RETRACT_BEFORE_ENTRY": "PASS"
+        if ("Messer einfahren / geschlossen halten" in chain_code)
+        else "FAIL",
+        "BSF_HEULE_RELEASE_AT_X": "PASS"
+        if ("Messer freigeben / Druck aus" in chain_code)
+        else "FAIL",
+        "BSF_HEULE_ACTIVATION_RPM_AT_X": "PASS"
+        if ("Spindel einschalten an X" in chain_code)
+        else "FAIL",
+        "BSF_HEULE_RETURN_X_BEFORE_RETRACT": "PASS"
+        if (
+            chain_code.find("Zurueck nach X") != -1
+            and chain_code.find("Zurueck nach X")
+            < chain_code.rfind("Messer einfahren / geschlossen halten")
+        )
+        else "FAIL",
     }
 
 
