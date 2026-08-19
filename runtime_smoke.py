@@ -16,6 +16,7 @@ from typing import Any, Dict, List
 from app_info import APP_AUTHOR, APP_EMAIL, APP_NAME, APP_VERSION, APP_WEBSITE
 from app_paths import APP_ICON_PNG_REL, resource_path
 from coordinates import BGFCoordinatePosition, BSFCoordinatePosition
+from nc_state import NC_STATE_CURRENT, NC_STATE_STALE
 from ui import MODE_BGF, MODE_BSF
 
 
@@ -70,6 +71,8 @@ def _execute_smoke(app) -> Dict[str, Any]:
     record("about", lambda: _open_about(app))
     record("programmer", lambda: _programmer_runtime(app))
     record("bgf_nc", lambda: _bgf_nc(app))
+    record("hpr5000_m16", lambda: _hpr5000_m16(app))
+    record("nc_stale", lambda: _nc_stale(app))
     record("bgf_list_files", lambda: _bgf_files(app))
     record("bgf_preview_help", lambda: _bgf_windows(app))
     record("bsf_nc", lambda: _bsf_nc(app))
@@ -108,6 +111,11 @@ def _open_about(app) -> str:
     if APP_AUTHOR not in blob or APP_WEBSITE not in blob or APP_EMAIL not in blob:
         raise RuntimeError("Info-Fenster ohne Jens Behm / Website / E-Mail.")
     return title
+
+
+def _set_entry(app, key: str, value: str) -> None:
+    app.entries[key].delete(0, "end")
+    app.entries[key].insert(0, value)
 
 
 def _prepare_bgf_single(app) -> None:
@@ -271,12 +279,12 @@ def _bgf_nc(app) -> Dict[str, str]:
         app.entries[key].insert(0, val)
     app.generate_bgf_code()
     code_zero = app.output_text.get("1.0", "end")
-    app.entries["single_surface_z"].delete(0, "end")
-    app.entries["single_surface_z"].insert(0, "20")
+    _set_entry(app, "single_surface_z", "20")
+    _set_entry(app, "raw_stock_top_z", "20")
     app.generate_bgf_code()
     code_plus = app.output_text.get("1.0", "end")
-    app.entries["single_surface_z"].delete(0, "end")
-    app.entries["single_surface_z"].insert(0, "-20")
+    _set_entry(app, "single_surface_z", "-20")
+    _set_entry(app, "raw_stock_top_z", "0")
     app.generate_bgf_code()
     code_minus = app.output_text.get("1.0", "end")
     return {
@@ -290,6 +298,114 @@ def _bgf_nc(app) -> Dict[str, str]:
             and "Z+0.1610" in code_plus
             and "Z-39.8390" in code_minus
         ),
+    }
+
+
+def _hpr5000_m16(app) -> Dict[str, str]:
+    app.mode_var.set(MODE_BGF)
+    app.on_mode_change(None)
+    app.position_mode_var.set("Teilkreis")
+    app.on_position_mode_change(None)
+    app.bgf_size_var.set("M16")
+    app.load_bgf_values()
+    for key, val in (
+        ("diameter", "430"),
+        ("count", "6"),
+        ("start_angle", "0"),
+        ("center_x", "0"),
+        ("center_y", "0"),
+        ("circle_surface_z", "-10"),
+        ("approach_clearance", "10"),
+        ("blank_size", "1000"),
+        ("blank_height", "60"),
+        ("raw_stock_top_z", "0"),
+    ):
+        _set_entry(app, key, val)
+    app.generate_bgf_code()
+    code = app.output_text.get("1.0", "end")
+    if "BEGIN PGM" not in code:
+        raise RuntimeError("HPR5000 M16: kein NC erzeugt.")
+    blk = [ln for ln in code.splitlines() if ln.startswith("BLK FORM")]
+    if len(blk) != 2:
+        raise RuntimeError("HPR5000 M16: BLK FORM fehlt.")
+    if "Z-60.0000" not in blk[0] or "Z+0.0000" not in blk[1]:
+        raise RuntimeError(f"HPR5000 M16: BLK FORM Z falsch: {blk}")
+    if "X-500.0000" not in blk[0] or "X+500.0000" not in blk[1]:
+        raise RuntimeError(f"HPR5000 M16: BLK FORM XY falsch: {blk}")
+    loop = code.split("LBL 1 ; Schleifenanfang Teilkreis", 1)
+    if len(loop) < 2:
+        raise RuntimeError("HPR5000 M16: Teilkreis-Schleife fehlt.")
+    body = loop[1].split("FN 12:", 1)[0]
+    if "CC X+0.0000 Y+0.0000 ; Teilkreis-Mitte / Pol" not in body:
+        raise RuntimeError("HPR5000 M16: CC Restore fehlt in der Schleife.")
+    if "LP PR+215.0000 PA+Q1 R0 FMAX ; Teilkreisposition" not in code:
+        raise RuntimeError("HPR5000 M16: Teilkreis-LP fehlt.")
+    if "CALL LBL 100" not in code:
+        raise RuntimeError("HPR5000 M16: CALL LBL 100 fehlt.")
+    for needle in (
+        "L Z+0.0000 R0 FMAX M13",
+        "L Z-12.1000 F682 M",
+        "L Z-47.1160 F2046 M",
+        "L Z-43.0750 R0 FMAX M",
+    ):
+        if needle not in code:
+            raise RuntimeError(f"HPR5000 M16: fehlende Bearbeitungs-Z: {needle}")
+    return {
+        "cc_restore": "True",
+        "blk_z": "True",
+        "machining_z": "True",
+    }
+
+
+def _nc_stale(app) -> Dict[str, str]:
+    app.mode_var.set(MODE_BGF)
+    app.on_mode_change(None)
+    app.position_mode_var.set("Teilkreis")
+    app.on_position_mode_change(None)
+    app.bgf_size_var.set("M16")
+    app.load_bgf_values()
+    for key, val in (
+        ("diameter", "430"),
+        ("count", "6"),
+        ("start_angle", "0"),
+        ("center_x", "0"),
+        ("center_y", "0"),
+        ("circle_surface_z", "0"),
+        ("approach_clearance", "10"),
+        ("blank_size", "1000"),
+        ("blank_height", "60"),
+        ("raw_stock_top_z", "0"),
+    ):
+        _set_entry(app, key, val)
+    app.generate_bgf_code()
+    output = app.output_text.get("1.0", "end")
+    if app.nc_guard.nc_state(app, output_text=output) != NC_STATE_CURRENT:
+        raise RuntimeError("Stale-Smoke: nach Generate nicht CURRENT.")
+    blk_before = [ln for ln in output.splitlines() if ln.startswith("BLK FORM")]
+    if "X-500.0000" not in blk_before[0]:
+        raise RuntimeError("Stale-Smoke: BLK FORM ±500 fehlt nach Generate.")
+
+    _set_entry(app, "blank_size", "1500")
+    app.refresh_nc_output_status()
+    if app.nc_guard.nc_state(app, output_text=app.output_text.get("1.0", "end")) != NC_STATE_STALE:
+        raise RuntimeError("Stale-Smoke: nach blank_size-Aenderung nicht STALE.")
+    if app._require_current_nc_for_output() is not None:
+        raise RuntimeError("Stale-Smoke: Export haette blockiert sein muessen.")
+
+    app.generate_bgf_code()
+    output_after = app.output_text.get("1.0", "end")
+    if app.nc_guard.nc_state(app, output_text=output_after) != NC_STATE_CURRENT:
+        raise RuntimeError("Stale-Smoke: nach Regenerate nicht CURRENT.")
+    blk_after = [ln for ln in output_after.splitlines() if ln.startswith("BLK FORM")]
+    if "X-750.0000" not in blk_after[0] or "X+750.0000" not in blk_after[1]:
+        raise RuntimeError(f"Stale-Smoke: BLK FORM ±750 fehlt: {blk_after}")
+    if app._require_current_nc_for_output() is None:
+        raise RuntimeError("Stale-Smoke: Export nach Regenerate blockiert.")
+    return {
+        "stale_after_change": "True",
+        "export_blocked": "True",
+        "regenerate_current": "True",
+        "export_pass": "True",
     }
 
 
@@ -454,13 +570,19 @@ def _file_dialogs_cancel(app) -> int:
     filedialog.asksaveasfilename = _cancel  # type: ignore[method-assign]
     filedialog.askopenfilename = _cancel  # type: ignore[method-assign]
 
+    # Vorherige Smoke-Schritte koennen Eingaben ohne Regenerate aendern (STALE).
+    if app.mode_var.get() == MODE_BSF:
+        app.generate_bsf_code()
+    else:
+        app.generate_bgf_code()
+    app.export_to_h()
+
     app.mode_var.set(MODE_BGF)
     app.on_mode_change(None)
     app.coord_save_list()
     app.coord_load_list()
     app.coord_export_csv()
     app.coord_import_csv()
-    app.export_to_h()
 
     app.mode_var.set(MODE_BSF)
     app.on_mode_change(None)

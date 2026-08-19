@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.1.3 – 2026-08-19
+
+### Behoben
+
+- BGF-Teilkreis: Der aktive Heidenhain-Pol wird vor jeder Teilkreisposition absolut wiederhergestellt.
+- Verhindert Positionsverschiebungen, wenn das BGF-Unterprogramm eigene CC-Sätze verwendet.
+
+### Verbessert
+
+- BLK FORM gibt auch ungerade und dezimale Rohteilmaße exakt aus.
+- Rohteil-Kantenlänge und Rohteil-Hoehe muessen finite und > 0 sein.
+- Rohteil-Oberkante Z ist jetzt unabhaengig vom Bohrungsanfang Z.
+- Lokale Bearbeitungsflaechen auf Absaetzen, z. B. Z-10 bei Rohteiloberkante Z0, werden korrekt unterstuetzt.
+
+### Sicherheit
+
+- Nach Aenderung eines NC-relevanten Parameters wird der bestehende NC-Code als veraltet markiert.
+- Veralteter NC kann weder als *.H exportiert noch in die Zwischenablage kopiert werden.
+- Der Benutzer muss bewusst neu generieren.
+
+### Validierung
+
+- CERATIZIT BGF M16
+- Teilkreis Ø430
+- 6 Positionen
+- Mitte X0/Y0
+- Rohteiloberkante Z0
+- Bohrungsstartflaeche Z-10
+- Rohteilhoehe 60 mm
+- reale Simulation PASS
+
 ## 0.1.2 – 2026-08-18
 
 ### Geändert

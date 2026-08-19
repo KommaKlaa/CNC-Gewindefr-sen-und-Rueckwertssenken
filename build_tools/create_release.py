@@ -118,6 +118,12 @@ def _run_smoke(exe: Path, label: str) -> Dict[str, object]:
     bgf = data.get("steps", {}).get("bgf_nc") or {}
     if str(bgf.get("snippet_ok")) != "True":
         raise ReleaseAborted(f"BGF-Smoke fehlgeschlagen ({label}): {bgf}")
+    hpr = data.get("steps", {}).get("hpr5000_m16") or {}
+    if str(hpr.get("machining_z")) != "True":
+        raise ReleaseAborted(f"HPR5000-M16-Smoke fehlgeschlagen ({label}): {hpr}")
+    stale = data.get("steps", {}).get("nc_stale") or {}
+    if str(stale.get("export_pass")) != "True":
+        raise ReleaseAborted(f"Stale-NC-Smoke fehlgeschlagen ({label}): {stale}")
     bsf = data.get("steps", {}).get("bsf_nc") or {}
     if str(bsf.get("has_begin")) != "True":
         raise ReleaseAborted(f"BSF-Smoke fehlgeschlagen ({label}): {bsf}")

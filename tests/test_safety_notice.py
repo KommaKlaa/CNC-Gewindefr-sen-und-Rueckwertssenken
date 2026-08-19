@@ -12,6 +12,8 @@ from unittest import mock
 import tkinter as tk
 from tkinter import ttk
 
+from app_info import APP_VERSION
+
 import safety_notice as sn
 
 
@@ -73,6 +75,11 @@ class TestSafetyNoticePersistence(unittest.TestCase):
     def test_new_version_requires_new_acceptance(self):
         sn.record_safety_notice_acceptance("0.1.1", path=self.settings_path)
         self.assertFalse(sn.is_safety_notice_accepted("0.1.2", path=self.settings_path))
+
+    def test_previous_release_acceptance_does_not_apply_to_current(self):
+        sn.record_safety_notice_acceptance("0.1.2", path=self.settings_path)
+        self.assertTrue(sn.is_safety_notice_accepted("0.1.2", path=self.settings_path))
+        self.assertFalse(sn.is_safety_notice_accepted(APP_VERSION, path=self.settings_path))
 
     def test_persistence_failure_fail_open_after_acceptance(self):
         with mock.patch.object(sn, "save_settings", return_value=False):
