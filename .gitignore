@@ -16,6 +16,11 @@ nuitka-crash-report.xml
 # Release artefacts (CHANGELOG.md and build_tools stay versioned)
 release/
 
+# Inno Setup installer output (scripts under installer/ stay versioned)
+installer/output/
+installer/defines.generated.iss
+*.installer-build/
+
 # Local user / machine project files (not test fixtures)
 *.H
 *.bgf.json
