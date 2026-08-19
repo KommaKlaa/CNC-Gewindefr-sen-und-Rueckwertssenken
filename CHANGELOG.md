@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.4 – 2026-08-19
+
+### Neu
+
+- Windows-Installer auf Basis von Inno Setup
+- Installation nach Program Files
+- Startmenü-Verknüpfung
+- optionale Desktop-Verknüpfung
+- saubere Windows-Deinstallation
+- portable ZIP-Version bleibt parallel verfügbar
+
+### Installer / Updates
+
+- stabile AppId für spätere Upgrades
+- Upgrade bestehender Installation ohne Doppelinstallation
+- Same-Version-Reinstall erlaubt
+- Downgrade auf ältere Version wird blockiert
+- Benutzerdaten bleiben bei Upgrade und Deinstallation erhalten
+- vollständig offline
+- kein Python auf dem Zielrechner erforderlich
+
+### Release-Pipeline
+
+- einheitliche Windows-Pipeline für Nuitka, portable ZIP und Setup
+- ZIP und installierte EXE verwenden denselben Nuitka-Binary
+- SHA256-Sidecars und SHA256SUMS
+- Release-Manifest und Integritätsprüfungen
+
 ## 0.1.3 – 2026-08-19
 
 ### Behoben

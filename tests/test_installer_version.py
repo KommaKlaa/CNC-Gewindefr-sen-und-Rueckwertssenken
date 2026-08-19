@@ -11,7 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "build_tools"))
 
-from app_info import APP_VERSION
+from app_info import APP_VERSION, WINDOWS_FILE_VERSION
 from create_windows_release import _nuitka_once, write_windows_release_manifest
 from installer_config import (
     CODE_SIGNING,
@@ -57,7 +57,7 @@ class TestReleaseAssetNamesAndSums(unittest.TestCase):
         names = windows_release_asset_names(APP_VERSION)
         self.assertEqual(names["folder"], f"NC-Code-Generator_{APP_VERSION}_Windows_x64")
         self.assertEqual(names["setup"], f"NC-Code-Generator-Setup-{APP_VERSION}.exe")
-        self.assertNotIn("0.1.4", names["setup"])
+        self.assertIn(APP_VERSION, names["setup"])
         future = windows_release_asset_names("0.1.4")
         self.assertEqual(future["setup"], "NC-Code-Generator-Setup-0.1.4.exe")
         self.assertEqual(future["zip"], "NC-Code-Generator_0.1.4_Windows_x64.zip")
@@ -123,13 +123,22 @@ class TestOrchestrationGuards(unittest.TestCase):
                 _nuitka_once(Path("."), counter)
             self.assertIn("NUITKA_BUILD_COUNT", str(ctx.exception))
 
-    def test_overwrite_blocked_for_existing_0_1_3(self):
+    def test_overwrite_blocked_when_artifacts_exist(self):
         from create_windows_release import run_windows_release
 
-        with self.assertRaises((InstallerAborted, SystemExit)) as ctx:
-            run_windows_release(
-                ["--skip-tests", "--skip-smoke", "--skip-install-smoke", "--allow-dirty"]
-            )
+        with mock.patch(
+            "create_windows_release.release_paths_exist",
+            return_value=True,
+        ):
+            with self.assertRaises(InstallerAborted) as ctx:
+                run_windows_release(
+                    [
+                        "--skip-tests",
+                        "--skip-smoke",
+                        "--skip-install-smoke",
+                        "--allow-dirty",
+                    ]
+                )
         self.assertIn("OVERWRITE_BLOCKED", str(ctx.exception))
 
     def test_installer_builder_does_not_call_nuitka(self):
@@ -159,12 +168,12 @@ class TestStalePayloadFingerprint(unittest.TestCase):
                 return_value="x64",
             ), mock.patch(
                 "installer_config.assert_exe_matches_app_info",
-                return_value={"FileVersionNumeric": "0.1.3.0"},
+                return_value={"FileVersionNumeric": WINDOWS_FILE_VERSION},
             ), mock.patch(
                 "installer_config.load_build_manifest",
                 return_value={
                     "app_version": APP_VERSION,
-                    "windows_file_version": "0.1.3.0",
+                    "windows_file_version": WINDOWS_FILE_VERSION,
                     "source_fingerprint": "not-the-real-fingerprint",
                 },
             ):

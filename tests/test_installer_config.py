@@ -54,7 +54,10 @@ class TestInstallerIdentity(unittest.TestCase):
             installer_filename("0.1.4"),
             "NC-Code-Generator-Setup-0.1.4.exe",
         )
-        self.assertNotEqual(installer_filename(APP_VERSION), "NC-Code-Generator-Setup-0.1.4.exe")
+        self.assertNotEqual(
+            installer_filename("0.1.3"),
+            installer_filename(APP_VERSION),
+        )
 
     def test_metadata_defines_from_app_info(self):
         defs = metadata_defines()
@@ -66,7 +69,7 @@ class TestInstallerIdentity(unittest.TestCase):
         self.assertEqual(defs["MyAppExeName"], EXE_FILENAME)
         self.assertEqual(defs["MyAppId"], INNO_APP_ID)
         self.assertEqual(defs["MyAppDescription"], APP_DESCRIPTION)
-        self.assertNotIn("0.1.4", defs["MyAppVersion"])
+        self.assertEqual(defs["MyAppVersion"], APP_VERSION)
 
     def test_generated_defines_utf8_from_app_info(self):
         from app_info import APP_COPYRIGHT
@@ -77,7 +80,6 @@ class TestInstallerIdentity(unittest.TestCase):
         self.assertIn(f'#define MyAppVersion "{APP_VERSION}"', text)
         self.assertIn(APP_COPYRIGHT, text)
         self.assertIn(APP_DESCRIPTION, text)
-        self.assertNotIn('#define MyAppVersion "0.1.4"', text)
         assert_iss_has_no_hardcoded_app_version(read_iss_text())
         self.assertIn("MyAppDefinesInclude", read_iss_text())
 

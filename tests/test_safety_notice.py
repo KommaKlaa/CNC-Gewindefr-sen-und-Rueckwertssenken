@@ -81,6 +81,13 @@ class TestSafetyNoticePersistence(unittest.TestCase):
         self.assertTrue(sn.is_safety_notice_accepted("0.1.2", path=self.settings_path))
         self.assertFalse(sn.is_safety_notice_accepted(APP_VERSION, path=self.settings_path))
 
+    def test_v013_acceptance_does_not_cover_v014(self):
+        sn.record_safety_notice_acceptance("0.1.3", path=self.settings_path)
+        self.assertTrue(sn.is_safety_notice_accepted("0.1.3", path=self.settings_path))
+        self.assertFalse(sn.is_safety_notice_accepted("0.1.4", path=self.settings_path))
+        sn.record_safety_notice_acceptance("0.1.4", path=self.settings_path)
+        self.assertTrue(sn.is_safety_notice_accepted("0.1.4", path=self.settings_path))
+
     def test_persistence_failure_fail_open_after_acceptance(self):
         with mock.patch.object(sn, "save_settings", return_value=False):
             ok = sn.record_safety_notice_acceptance("0.1.1", path=self.settings_path)
