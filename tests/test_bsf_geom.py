@@ -73,6 +73,14 @@ class TestGuiBsfToolarch(unittest.TestCase):
             ("bsf_reference_z", "0"),
             ("single_x", "0"),
             ("single_y", "0"),
+            # FAIL-CLOSED: Pflichtparameter fuer HEULE-NC-Erzeugung
+            # reference_z=0, sink_depth=38, Z0=Bottom -> target=38
+            # dep_z=-5: X=-27.25, B=-14.55, C=-13.3, D=29.45 -> X<B<C<D OK
+            ("deployment_edge_z", "-5"),
+            ("entry_edge_z", "20"),
+            ("x_safety_clearance", "2.000"),
+            ("entry_clearance", "1.000"),
+            ("full_cut_overlap_mm", "0.250"),
         ):
             app.entries[key].delete(0, "end")
             app.entries[key].insert(0, val)
@@ -111,19 +119,27 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.on_bsf_tool_profile_change()
         self.app.entries["bsf_reference_z"].delete(0, "end")
         self.app.entries["bsf_reference_z"].insert(0, "20")
+        # reference_z=20, sink_depth=38 -> target=58; dep_z=15 (ref-5), entry_edge_z=40 (ref+20)
+        # X = 15-20.25-2 = -7.25, B = 15-8.55-1 = 5.45, C = 15-8.55+0.25 = 6.7, D = 58-8.55 = 49.45
+        self.app.entries["deployment_edge_z"].delete(0, "end")
+        self.app.entries["deployment_edge_z"].insert(0, "15")
+        self.app.entries["entry_edge_z"].delete(0, "end")
+        self.app.entries["entry_edge_z"].insert(0, "40")
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("L Z+49.4500 R0 F30 ; Senken mit 50 Prozent Vorschub", code)
-        self.assertIn("L Z+34.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X", code)
+        self.assertIn("L Z-7.2500 R0 FMAX S2000 M3 ; Spindel einschalten an X", code)
         self.assertIn("TOOL CALL 8 Z S800", code)
 
     def test_reference_z_and_tool_e_generate_measurement_face_z(self):
         self.app.bsf_tool_profile_var.set(TOOL_E.designation)
         self.app.on_bsf_tool_profile_change()
+        # reference_z=0, sink_depth=38 -> target=38; dep_z=-5, AL=26.75, safety=2 -> X=-33.75
+        # z_sink_finish = 38 - 11.4 = 26.6
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("L Z+26.6000 R0 F30 ; Senken mit 50 Prozent Vorschub", code)
-        self.assertIn("L Z+8.2500 R0 FMAX S1500 M3 ; Spindel einschalten an X", code)
+        self.assertIn("L Z-33.7500 R0 FMAX S1500 M3 ; Spindel einschalten an X", code)
         self.assertIn("; HEULE AKTIVIERUNGSDREHZAHL: 1500 U/MIN", code)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", code)
 
@@ -134,7 +150,7 @@ class TestGuiBsfToolarch(unittest.TestCase):
         code = self.app.output_text.get("1.0", "end")
         motion = _motion_lines(code)
         self.assertIn("L Z+29.4500 R0 F30 ; Senken mit 50 Prozent Vorschub", motion)
-        self.assertIn("L Z+14.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X", motion)
+        self.assertIn("L Z-27.2500 R0 FMAX S2000 M3 ; Spindel einschalten an X", motion)
         comment_motion = [line for line in motion if not line.startswith(";")]
         self.assertTrue(all(re.match(r"^(L |TOOL CALL)", line) for line in comment_motion))
 
@@ -149,8 +165,8 @@ class TestGuiBsfToolarch(unittest.TestCase):
         code_e = self.app.output_text.get("1.0", "end")
         self.assertIn("S2000 M3 ; Spindel einschalten an X", code_c)
         self.assertIn("S1500 M3 ; Spindel einschalten an X", code_e)
-        self.assertNotIn("S1500 M3 ; Spindel einschalten an X", code_c)
-        self.assertNotIn("S2000 M3 ; Spindel einschalten an X", code_e)
+        self.assertNotIn("S1500", code_c)
+        self.assertNotIn("S2000", code_e)
 
     def test_m_functions_unchanged(self):
         self.app.bsf_tool_profile_var.set(TOOL_C.designation)
@@ -158,8 +174,8 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("M5 ; Spindel aus", code)
-        self.assertIn("M7 ; Messer einfahren / geschlossen halten", code)
-        self.assertIn("M9 ; Messer schliessen / Messer freigeben / Druck aus", code)
+        self.assertIn("M7 ; Druck/IK ein - Messer eingefahren", code)
+        self.assertIn("M9 ; Druck/IK aus - Messer zum Ausklappen freigegeben", code)
 
     def test_spindle_on_z_remains_reference_relative(self):
         self.assertEqual(spindle_on_z(0.0), 1.0)

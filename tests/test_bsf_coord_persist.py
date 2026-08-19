@@ -99,6 +99,17 @@ class TestBsfPersist(unittest.TestCase):
         app.on_bsf_tool_profile_change()
         app.entries["spindle_speed"].delete(0, "end")
         app.entries["spindle_speed"].insert(0, "777")
+        # FAIL-CLOSED: Pflichtparameter setzen
+        for k, v in [
+            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
+            ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
+            ("feed_rate", "60"), ("dwell_time", "1.5"),
+            ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+            ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
+            ("full_cut_overlap_mm", "0.250"),
+        ]:
+            app.entries[k].delete(0, "end")
+            app.entries[k].insert(0, v)
         app.bsf_coord_rows = [BSFCoordinatePosition(0.0, 0.0)]
         app.position_mode_var.set("Koordinatenliste")
         app.on_position_mode_change(None)

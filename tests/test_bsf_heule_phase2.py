@@ -274,6 +274,12 @@ class TestBsfRawSurfaceStale(unittest.TestCase):
             ("spindle_speed", "800"),
             ("feed_rate", "60"),
             ("dwell_time", "1.0"),
+            # FAIL-CLOSED: ref=60, sink=38 -> target=98; dep=55 (ref-5): X=32.75, B=45.45, C=46.7, D=89.45
+            ("deployment_edge_z", "55"),
+            ("entry_edge_z", "80"),
+            ("x_safety_clearance", "2.000"),
+            ("entry_clearance", "1.000"),
+            ("full_cut_overlap_mm", "0.250"),
         ):
             app.entries[key].delete(0, "end")
             app.entries[key].insert(0, val)
@@ -325,8 +331,8 @@ class TestBsfHeuleSequence(unittest.TestCase):
         self.assertNotIn("Z+61.0000", code)  # reference_z+1 Aktivierung entfernt
         self.assertIn("Spindel einschalten an X", code)
         self.assertIn("M5 ; Spindel aus", code)
-        self.assertIn("Messer einfahren / geschlossen halten", code)
-        self.assertIn("Messer freigeben / Druck aus", code)
+        self.assertIn("Druck/IK ein - Messer eingefahren", code)
+        self.assertIn("Druck/IK aus - Messer zum Ausklappen freigegeben", code)
         self.assertIn("Zurueck nach X", code)
         root.destroy()
 

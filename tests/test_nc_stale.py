@@ -120,14 +120,29 @@ class TestNcStaleGuard(unittest.TestCase):
         self.assertIn("CC X+0.0000 Y+0.0000 ; Teilkreis-Mitte / Pol", app.output_text.get("1.0", tk.END))
         self.assertIn("LP PR+290.0000 PA+Q1 R0 FMAX", app.output_text.get("1.0", tk.END))
 
-    def test_tool_change_stale(self):
-        app = self.app
+    def _setup_bsf_with_edges(self, app):
+        """BSF-Grundkonfiguration mit FAIL-CLOSED Pflichtparametern."""
         app.mode_var.set(MODE_BSF)
         app.on_mode_change(None)
         app.position_mode_var.set("Einzelposition")
         app.on_position_mode_change(None)
         app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
         app.on_bsf_tool_profile_change()
+        for k, v in [
+            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
+            ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
+            ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.5"),
+            ("single_x", "0"), ("single_y", "0"),
+            # ref=0, sink=38 -> target=38; dep=-5: X<B<C<D OK
+            ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+            ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
+            ("full_cut_overlap_mm", "0.250"),
+        ]:
+            _set(app, k, v)
+
+    def test_tool_change_stale(self):
+        app = self.app
+        self._setup_bsf_with_edges(app)
         app.generate_bsf_code()
         self.assertEqual(self._state(), NC_STATE_CURRENT)
         app.bsf_tool_profile_var.set("BSF-E-1350/050-16.5-14")
@@ -136,12 +151,7 @@ class TestNcStaleGuard(unittest.TestCase):
 
     def test_zref_change_stale(self):
         app = self.app
-        app.mode_var.set(MODE_BSF)
-        app.on_mode_change(None)
-        app.position_mode_var.set("Einzelposition")
-        app.on_position_mode_change(None)
-        app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
-        app.on_bsf_tool_profile_change()
+        self._setup_bsf_with_edges(app)
         app.generate_bsf_code()
         _set(app, "bsf_reference_z", "20")
         self.assertEqual(self._state(), NC_STATE_STALE)

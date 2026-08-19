@@ -100,13 +100,41 @@ class TestGuiModesRegression(unittest.TestCase):
         self.assertIn("TOOL CALL 8 Z DR0", code)
 
     def test_bsf_circle_contains_loop(self):
+        import tkinter.messagebox as mb
+
         self.app.mode_var.set("HEULE BSF")
         self.app.on_mode_change(None)
         self.app.position_mode_var.set("Teilkreis")
         self.app.on_position_mode_change(None)
         self.app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
         self.app.on_bsf_tool_profile_change()
-        self.app.generate_bsf_code()
+        # FAIL-CLOSED: BSF-Grundwerte und Pflichtparameter setzen
+        for key, val in (
+            ("bund_thickness", "18"),
+            ("sink_depth", "38"),
+            ("clearance", "23"),
+            ("safe_z", "100"),
+            ("end_safe_z", "200"),
+            ("bsf_reference_z", "0"),
+            ("spindle_speed", "800"),
+            ("feed_rate", "60"),
+            ("dwell_time", "1.5"),
+            # dep_z=-5: X=-27.25, B=-14.55, C=-13.3, D=29.45 -> OK
+            ("deployment_edge_z", "-5"),
+            ("entry_edge_z", "20"),
+            ("x_safety_clearance", "2.000"),
+            ("entry_clearance", "1.000"),
+            ("full_cut_overlap_mm", "0.250"),
+        ):
+            if key in self.app.entries:
+                self.app.entries[key].delete(0, "end")
+                self.app.entries[key].insert(0, val)
+        orig = mb.showerror
+        mb.showerror = lambda *a, **k: None
+        try:
+            self.app.generate_bsf_code()
+        finally:
+            mb.showerror = orig
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("; --- TEILKREIS ---", code)
         self.assertIn("LBL 100 ; Unterprogramm BSF", code)

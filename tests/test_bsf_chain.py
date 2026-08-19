@@ -67,6 +67,10 @@ def _set_bsf_common(app, *, end_mode=BSF_END_MODE_CHAIN):
         ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
         ("program_name", "TEST_BSF"), ("raw_stock_top_z", "0"),
         ("blank_height", "60"), ("blank_size", "1000"),
+        # FAIL-CLOSED: ref=0, sink=38 -> target=38; dep=-5: X=-27.25, B=-14.55, C=-13.3, D=29.45
+        ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+        ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
+        ("full_cut_overlap_mm", "0.250"),
     ]:
         app.entries[k].delete(0, "end")
         app.entries[k].insert(0, v)

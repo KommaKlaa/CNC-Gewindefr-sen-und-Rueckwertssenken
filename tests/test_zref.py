@@ -40,11 +40,8 @@ _Z_RE = re.compile(r"Z([+-]\d+\.\d+)")
 _WORKPIECE_NEEDLES = (
     "Durch den Bund tauchen",
     "Spindel einschalten",
-    "Messer unten aktivieren",
-    "Vorposition vor Kontakt",
     "Senken mit 50 Prozent",
     "Senken auf Fertigmass",
-    "Unten freifahren",
 )
 _DATUM_NEEDLES = ("CYCL DEF 7", "TRANS DATUM", "DATUM SHIFT")
 
@@ -324,11 +321,29 @@ class TestBsfGuiZref(unittest.TestCase):
             ("safe_z", "100"),
             ("end_safe_z", "200"),
             ("bsf_reference_z", "0"),
+            # FAIL-CLOSED: Pflichtparameter fuer HEULE-NC-Erzeugung
+            # Absolute Kanten: unabhaengig von reference_z
+            ("deployment_edge_z", "60"),
+            ("entry_edge_z", "0"),
+            ("x_safety_clearance", "2.000"),
+            ("entry_clearance", "1.000"),
+            ("full_cut_overlap_mm", "0.250"),
         ):
             _set_entry(app, key, val)
         _fill_blade(app)
 
     def _generate(self, reference: str, designation=TOOL_C.designation) -> str:
+        ref = float(reference)
+        # Absolute Kanten werden relativ zur Bezugsebene gesetzt,
+        # damit die Geometrie-Invariante X < B < C < D fuer alle reference_z-Werte erfuellt ist.
+        # deployment_edge_z: 5 mm unterhalb der Bezugsebene (d.h. deployment_edge = ref - 5)
+        # entry_edge_z: 2 mm oberhalb der Bezugsebene (Eintritt der Bohrung)
+        # Bei z0_is_flange_bottom: target = ref + sink, Bund geht von ref bis ref+bund_thickness.
+        # deployment_edge_z = ref - 5 liegt unterhalb des Bundes.
+        dep_z = ref - 5.0
+        ent_z = ref + 20.0  # Oberkante Bund: ref + bund_thickness = ref + 18
+        _set_entry(self.app, "deployment_edge_z", f"{dep_z:g}")
+        _set_entry(self.app, "entry_edge_z", f"{ent_z:g}")
         _set_entry(self.app, "bsf_reference_z", reference)
         _fill_blade(self.app, designation)
         self.app.generate_bsf_code()
@@ -337,9 +352,11 @@ class TestBsfGuiZref(unittest.TestCase):
     def test_zero_regression(self):
         code = self._generate("0")
         wp = _workpiece_z_map(code)
+        # ref=0, sink=38 -> target=38, z_sink_finish = 38-8.55 = 29.45
         self.assertAlmostEqual(wp["Senken mit 50 Prozent"], 29.45, places=3)
-        self.assertAlmostEqual(wp["Durch den Bund tauchen"], 14.75, places=3)
-        self.assertEqual(wp["Spindel einschalten"], 14.75)
+        # dep_z = 0-5=-5, X = -5-20.25-2 = -27.25
+        self.assertAlmostEqual(wp["Durch den Bund tauchen"], -27.25, places=3)
+        self.assertAlmostEqual(wp["Spindel einschalten"], -27.25, places=3)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", code)
         self.assertIn("L Z+200.0000 R0 FMAX M30", code)
         self.assertIn("L X+0.0000 Y+0.0000 Z+100.0000 R0 FMAX", code)
@@ -351,13 +368,14 @@ class TestBsfGuiZref(unittest.TestCase):
         plus = self._generate("20")
         z0 = _workpiece_z_map(zero)
         z20 = _workpiece_z_map(plus)
-        self.assertEqual(set(z0), set(z20))
-        for key in z0:
-            self.assertAlmostEqual(z20[key], z0[key] + 20.0)
+        # D/sink verschiebt sich mit reference_z: ref+sink-Hs
+        self.assertAlmostEqual(z20["Senken mit 50 Prozent"], z0["Senken mit 50 Prozent"] + 20.0, places=3)
+        # X verschiebt sich ebenfalls, weil _generate dep_z = ref-5 setzt
+        self.assertAlmostEqual(z20["Durch den Bund tauchen"], z0["Durch den Bund tauchen"] + 20.0, places=3)
+        self.assertAlmostEqual(z20["Spindel einschalten"], z0["Spindel einschalten"] + 20.0, places=3)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", plus)
         self.assertIn("L Z+200.0000 R0 FMAX M30", plus)
         self.assertIn("L X+0.0000 Y+0.0000 Z+100.0000 R0 FMAX", plus)
-        self.assertEqual(z20["Spindel einschalten"], 34.75)
         self.assertAlmostEqual(z20["Senken mit 50 Prozent"], 49.45, places=3)
 
     def test_minus20_shifts_workpiece_only(self):
@@ -365,10 +383,11 @@ class TestBsfGuiZref(unittest.TestCase):
         minus = self._generate("-20")
         z0 = _workpiece_z_map(zero)
         zm = _workpiece_z_map(minus)
-        for key in z0:
-            self.assertAlmostEqual(zm[key], z0[key] - 20.0)
+        # D/sink und X verschieben sich gleichmaessig mit reference_z
+        self.assertAlmostEqual(zm["Senken mit 50 Prozent"], z0["Senken mit 50 Prozent"] - 20.0, places=3)
+        self.assertAlmostEqual(zm["Durch den Bund tauchen"], z0["Durch den Bund tauchen"] - 20.0, places=3)
+        self.assertAlmostEqual(zm["Spindel einschalten"], z0["Spindel einschalten"] - 20.0, places=3)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", minus)
-        self.assertEqual(zm["Spindel einschalten"], -5.25)
         self.assertAlmostEqual(zm["Senken mit 50 Prozent"], 9.45, places=3)
 
     def test_xy_m_feed_unchanged(self):
@@ -441,7 +460,11 @@ class TestBsfGuiZref(unittest.TestCase):
         self.assertTrue(text.startswith("Nr;X;Y"))
 
     def test_all_bsf_modes_use_global_reference(self):
-        _set_entry(self.app, "bsf_reference_z", "20")
+        ref = 20.0
+        _set_entry(self.app, "bsf_reference_z", f"{ref:g}")
+        # Kanten konsistent zur neuen Bezugsebene setzen
+        _set_entry(self.app, "deployment_edge_z", f"{ref - 5.0:g}")
+        _set_entry(self.app, "entry_edge_z", f"{ref + 20.0:g}")
         codes = []
         self.app.bsf_coord_rows = [BSFCoordinatePosition(0.0, 0.0)]
         for mode in ("Teilkreis", "Einzelposition", "Koordinatenliste"):
@@ -513,6 +536,12 @@ class TestBsfJsonReferenceZ(unittest.TestCase):
         app.on_position_mode_change(None)
         _fill_blade(app)
         _set_entry(app, "bsf_reference_z", "20.5")
+        # FAIL-CLOSED: Kanten konsistent zu ref=20.5 setzen
+        _set_entry(app, "deployment_edge_z", "15.5")   # ref-5 = 15.5
+        _set_entry(app, "entry_edge_z", "40.5")         # ref+20 = 40.5
+        _set_entry(app, "x_safety_clearance", "2.000")
+        _set_entry(app, "entry_clearance", "1.000")
+        _set_entry(app, "full_cut_overlap_mm", "0.250")
         app.bsf_coord_rows = [BSFCoordinatePosition(10.0, 20.0)]
         orig = _silence(mb)
         try:

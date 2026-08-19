@@ -679,6 +679,10 @@ class BSFGeneratorGUI:
         self.entries["entry_clearance"] = ttk.Entry(frame, width=12)
         self.entries["entry_clearance"].insert(0, "1.000")
         self.entries["entry_clearance"].grid(row=4, column=3, sticky=tk.W, pady=2, padx=(0, 12))
+        ttk.Label(frame, text="Schneiden-Ueberdeckung C [mm]:").grid(row=4, column=4, sticky=tk.W, pady=2)
+        self.entries["full_cut_overlap_mm"] = ttk.Entry(frame, width=12)
+        self.entries["full_cut_overlap_mm"].insert(0, "0.250")
+        self.entries["full_cut_overlap_mm"].grid(row=4, column=5, sticky=tk.W, pady=2)
 
         self.bsf_target_cutting_edge_var = tk.StringVar(value="—")
         self.bsf_material_removal_var = tk.StringVar(value="—")
@@ -1943,6 +1947,7 @@ class BSFGeneratorGUI:
                 else _entry_float("entry_edge_z", "Bohrungs-Eintrittskante Z")
             ),
             entry_clearance=_entry_float("entry_clearance", "Eintritts-Sicherheitsabstand A"),
+            full_cut_overlap_mm=_entry_float("full_cut_overlap_mm", "Schneiden-Ueberdeckung C"),
             tool_profile_key=tool_profile.key,
             bund_thickness=_entry_float("bund_thickness", "Bund-Dicke"),
             sink_finish=_entry_float("sink_depth", "Senk-Fertigmaß"),
@@ -1989,6 +1994,7 @@ class BSFGeneratorGUI:
             "x_safety_clearance": self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else "2.000",
             "entry_edge_z": self.entries["entry_edge_z"].get() if "entry_edge_z" in self.entries else "",
             "entry_clearance": self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else "1.000",
+            "full_cut_overlap_mm": self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else "0.250",
             "tool_profile": self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
             "spindle": self.entries["spindle_speed"].get(),
             "feed": self.entries["feed_rate"].get(),
@@ -2022,6 +2028,7 @@ class BSFGeneratorGUI:
         self._set_entry_value("x_safety_clearance", snapshot.get("x_safety_clearance", "2.000"))
         self._set_entry_value("entry_edge_z", snapshot.get("entry_edge_z", ""))
         self._set_entry_value("entry_clearance", snapshot.get("entry_clearance", "1.000"))
+        self._set_entry_value("full_cut_overlap_mm", snapshot.get("full_cut_overlap_mm", "0.250"))
         self.bsf_tool_profile_var.set(snapshot.get("tool_profile", TOOL_SELECTION_REQUIRED))
         self.on_bsf_tool_profile_change()
         self._set_entry_value("spindle_speed", snapshot["spindle"])
@@ -2067,6 +2074,7 @@ class BSFGeneratorGUI:
         self._set_entry_value("x_safety_clearance", f"{doc.x_safety_clearance:g}")
         self._set_entry_value("entry_edge_z", "" if doc.entry_edge_z is None else f"{doc.entry_edge_z:g}")
         self._set_entry_value("entry_clearance", f"{doc.entry_clearance:g}")
+        self._set_entry_value("full_cut_overlap_mm", f"{doc.full_cut_overlap_mm:g}")
         if doc.tool_profile_key:
             profile = profile_by_key(doc.tool_profile_key)
             self.bsf_tool_profile_var.set(profile.designation if profile is not None else TOOL_SELECTION_REQUIRED)
@@ -2746,6 +2754,7 @@ class BSFGeneratorGUI:
         ent = self.entries["entry_edge_z"].get() if "entry_edge_z" in self.entries else ""
         xsf = self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else ""
         ecf = self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else ""
+        fco = self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else ""
         try:
             ref_z = parse_optional_finite_mm(ref)
             sink_finish = parse_optional_finite_mm(sink)
@@ -2754,6 +2763,7 @@ class BSFGeneratorGUI:
             ent_z = parse_optional_finite_mm(ent)
             xsf_z = parse_optional_finite_mm(xsf)
             ecf_z = parse_optional_finite_mm(ecf)
+            fco_val = parse_optional_finite_mm(fco)
         except ValueError:
             self.bsf_target_cutting_edge_var.set("—")
             self.bsf_material_removal_var.set("—")
@@ -2797,6 +2807,7 @@ class BSFGeneratorGUI:
                     deployment_length_al_mm=profile.deployment_length_al_mm,
                     x_safety_clearance_mm=xsf_z,
                     entry_clearance_mm=ecf_z,
+                    full_cut_overlap_mm=fco_val if fco_val is not None else 0.25,
                 )
         except ValueError:
             self.bsf_target_cutting_edge_var.set("—")
@@ -3543,32 +3554,50 @@ class BSFGeneratorGUI:
             entry_clearance = parse_optional_finite_mm(
                 self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else ""
             )
+            full_cut_overlap_mm_val = parse_optional_finite_mm(
+                self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else ""
+            )
         except ValueError as exc:
             messagebox.showerror("HEULE Prozessgeometrie", str(exc))
             return
 
+        # FAIL-CLOSED: Kantengeometrie muss explizit angegeben werden.
+        # Kein automatisches Ableiten aus anderen Massen (reference_z, target-1, etc.)
+        if deployment_edge_z is None:
+            messagebox.showerror(
+                "HEULE Prozessgeometrie – Ausklappkante fehlt",
+                "Fuer den HEULE-BSF-Prozess fehlt die hintere Bohrungs-/Ausklappkante Z.\n\n"
+                "Position X kann nicht sicher berechnet werden.\n\n"
+                "Bitte 'Ausklappkante / hintere Bohrungskante Z' eingeben.",
+            )
+            return
+        if entry_edge_z is None:
+            messagebox.showerror(
+                "HEULE Prozessgeometrie – Eintrittskante fehlt",
+                "Fuer den HEULE-BSF-Prozess fehlt die Bohrungs-Eintrittskante Z.\n\n"
+                "Position A kann nicht sicher berechnet werden.\n\n"
+                "Bitte 'Bohrungs-Eintrittskante Z' eingeben.",
+            )
+            return
         if x_safety_clearance is None:
             x_safety_clearance = 2.0
         if entry_clearance is None:
             entry_clearance = 1.0
-        # Abwaertskompatibel: wenn Kanten nicht gepflegt sind, sichere Default-Ableitung nutzen.
-        target_cutting_edge_z = z_values["target_cutting_edge_z"]["z_sink_finish"]
-        if deployment_edge_z is None:
-            deployment_edge_z = target_cutting_edge_z - 1.0
-        if entry_edge_z is None:
-            entry_edge_z = float(z_values.get("reference_z", 0.0))
-
-        if any(v is None for v in (deployment_edge_z, entry_edge_z, x_safety_clearance, entry_clearance)):
-            return
+        if full_cut_overlap_mm_val is None:
+            full_cut_overlap_mm_val = 0.25
         if x_safety_clearance < 0:
             messagebox.showerror("HEULE Position X", "Ausklapp-Sicherheitsabstand X muss >= 0 sein.")
             return
         if entry_clearance < 0:
             messagebox.showerror("HEULE Position A", "Eintritts-Sicherheitsabstand A muss >= 0 sein.")
             return
+        if full_cut_overlap_mm_val < 0:
+            messagebox.showerror("HEULE Schneiden-Ueberdeckung C", "Schneiden-Ueberdeckung C muss >= 0 sein.")
+            return
         if blade.deployment_length_al_mm is None:
             messagebox.showerror("HEULE AL", "MANUFACTURER_PROFILE_VALUE_MISSING = deployment_length_al_mm")
             return
+        target_cutting_edge_z = z_values["target_cutting_edge_z"]["z_sink_finish"]
         try:
             heule_pos = compute_heule_process_positions(
                 deployment_edge_z=deployment_edge_z,
@@ -3578,9 +3607,25 @@ class BSFGeneratorGUI:
                 deployment_length_al_mm=blade.deployment_length_al_mm,
                 x_safety_clearance_mm=x_safety_clearance,
                 entry_clearance_mm=entry_clearance,
+                full_cut_overlap_mm=full_cut_overlap_mm_val,
             )
         except ValueError as exc:
             messagebox.showerror("HEULE Prozessgeometrie", str(exc))
+            return
+
+        # D-INVARIANTE: heule_pos.d_measurement_face_z und z_values["z_sink_finish"]
+        # muessen fachlich identisch sein (beide = target_cutting_edge_z - Hs).
+        _D_TOLERANCE = 1e-9
+        d_heule = heule_pos.d_measurement_face_z
+        d_existing = z_values["z_sink_finish"]
+        if abs(d_heule - d_existing) > _D_TOLERANCE:
+            messagebox.showerror(
+                "HEULE D-Invariante verletzt",
+                f"INTERNER FEHLER: D-Position aus HEULE-Modell ({d_heule:.6f}) "
+                f"stimmt nicht mit bestehendem z_sink_finish ({d_existing:.6f}) ueberein.\n\n"
+                f"Abweichung: {abs(d_heule - d_existing):.2e} > Toleranz {_D_TOLERANCE:.0e}\n\n"
+                "NC-Erzeugung blockiert. Bitte Entwickler informieren.",
+            )
             return
 
         safe_err = validate_bsf_safe_z_against_reference(
@@ -3714,13 +3759,13 @@ class BSFGeneratorGUI:
         lines: List[str] = []
         lines.append(f"L {fmt_axis('Z', heule_pos.a_measurement_face_z)} R0 FMAX ; A vor Bohrung")
         lines.append("M5 ; Spindel aus")
-        lines.append(f"{m_act} ; Messer einfahren / geschlossen halten")
+        lines.append(f"{m_act} ; Druck/IK ein - Messer eingefahren")
         lines.append("CYCL DEF 9.0 VERWEILZEIT")
         lines.append(f"CYCL DEF 9.1 V.ZEIT {dwell_time:.1f}")
         lines.append(
             f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX ; Durch den Bund tauchen / X hinter Bohrung (AL+Sicherheit)"
         )
-        lines.append(f"{m_deact} ; Messer schliessen / Messer freigeben / Druck aus")
+        lines.append(f"{m_deact} ; Druck/IK aus - Messer zum Ausklappen freigegeben")
         if activation_speed_rpm is not None:
             lines.append(
                 f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX S{int(activation_speed_rpm)} M3 ; Spindel einschalten an X"
@@ -3740,7 +3785,7 @@ class BSFGeneratorGUI:
 
         lines.append(f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX ; Zurueck nach X")
         lines.append("M5 ; Spindel aus")
-        lines.append(f"{m_act} ; Messer einfahren / geschlossen halten")
+        lines.append(f"{m_act} ; Druck/IK ein - Messer eingefahren")
         lines.append("CYCL DEF 9.0 VERWEILZEIT")
         lines.append(f"CYCL DEF 9.1 V.ZEIT {dwell_time:.1f}")
         lines.append(f"L {fmt_axis('Z', heule_pos.a_measurement_face_z)} R0 FMAX ; Zurueck nach A")

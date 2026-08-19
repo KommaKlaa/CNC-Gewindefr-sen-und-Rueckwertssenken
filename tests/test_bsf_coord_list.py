@@ -39,6 +39,12 @@ class TestBsfCoordGui(unittest.TestCase):
             ("safe_z", "100"),
             ("end_safe_z", "200"),
             ("bsf_reference_z", "0"),
+            # FAIL-CLOSED: dep=-5 -> X<B<C<D fuer sink=38, ref=0
+            ("deployment_edge_z", "-5"),
+            ("entry_edge_z", "20"),
+            ("x_safety_clearance", "2.000"),
+            ("entry_clearance", "1.000"),
+            ("full_cut_overlap_mm", "0.250"),
         ):
             app.entries[key].delete(0, "end")
             app.entries[key].insert(0, val)

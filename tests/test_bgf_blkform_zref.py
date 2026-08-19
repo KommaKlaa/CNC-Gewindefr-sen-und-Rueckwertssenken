@@ -329,6 +329,17 @@ class TestBlkFormZref(unittest.TestCase):
         _set(app, "blank_height", "60")
         _set(app, "raw_stock_top_z", "0")
         _set(app, "bsf_reference_z", "0")
+        # FAIL-CLOSED: Pflichtparameter setzen
+        for k, v in [
+            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
+            ("safe_z", "100"), ("end_safe_z", "200"),
+            ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.5"),
+            ("single_x", "0"), ("single_y", "0"),
+            ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+            ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
+            ("full_cut_overlap_mm", "0.250"),
+        ]:
+            _set(app, k, v)
         app.generate_bsf_code()
         code_a = app.output_text.get("1.0", tk.END)
         blk_a = _blk_lines(code_a)

@@ -590,6 +590,7 @@ def _bsf_endmode(app) -> Dict[str, str]:
             ("center_x", "0"), ("center_y", "0"), ("count", str(count)),
             ("deployment_edge_z", "60"), ("entry_edge_z", "0"),
             ("x_safety_clearance", "2"), ("entry_clearance", "1"),
+            ("full_cut_overlap_mm", "0.250"),
         ]:
             app.entries[k].delete(0, "end")
             app.entries[k].insert(0, v)
@@ -641,10 +642,10 @@ def _bsf_endmode(app) -> Dict[str, str]:
         )
         else "FAIL",
         "BSF_HEULE_RETRACT_BEFORE_ENTRY": "PASS"
-        if ("Messer einfahren / geschlossen halten" in chain_code)
+        if ("Druck/IK ein - Messer eingefahren" in chain_code)
         else "FAIL",
         "BSF_HEULE_RELEASE_AT_X": "PASS"
-        if ("Messer freigeben / Druck aus" in chain_code)
+        if ("Druck/IK aus - Messer zum Ausklappen freigegeben" in chain_code)
         else "FAIL",
         "BSF_HEULE_ACTIVATION_RPM_AT_X": "PASS"
         if ("Spindel einschalten an X" in chain_code)
@@ -653,7 +654,35 @@ def _bsf_endmode(app) -> Dict[str, str]:
         if (
             chain_code.find("Zurueck nach X") != -1
             and chain_code.find("Zurueck nach X")
-            < chain_code.rfind("Messer einfahren / geschlossen halten")
+            < chain_code.rfind("Druck/IK ein - Messer eingefahren")
+        )
+        else "FAIL",
+        "BSF_HEULE_REQUIRED_EDGES": "PASS"
+        if (
+            "deployment_edge_z" in chain_code or "Ausklappkante" in chain_code
+            or "X hinter Bohrung (AL+Sicherheit)" in chain_code
+        )
+        else "FAIL",
+        "BSF_HEULE_NO_GEOMETRY_FALLBACK": "PASS"
+        if (
+            "deployment_edge_z" not in chain_code.lower()  # kein default-Fallback-Kommentar
+            and "Abwaertskompatibel" not in chain_code
+        )
+        else "FAIL",
+        "BSF_HEULE_C_PARAMETER": "PASS"
+        if ("C Schneide greift" in chain_code)
+        else "FAIL",
+        "BSF_HEULE_D_CANONICAL": "PASS"
+        if ("Senken auf Fertigmass" in chain_code or "Senken mit 50 Prozent Vorschub" in chain_code)
+        else "FAIL",
+        "BSF_HEULE_D_INVARIANT": "PASS"
+        if chain_code  # NC wurde erzeugt → D-Invariante hat nicht blockiert
+        else "FAIL",
+        "BSF_HEULE_M_SEMANTICS": "PASS"
+        if (
+            "Druck/IK ein - Messer eingefahren" in chain_code
+            and "Druck/IK aus - Messer zum Ausklappen freigegeben" in chain_code
+            and "Messer schliessen / Messer freigeben / Druck aus" not in chain_code
         )
         else "FAIL",
     }

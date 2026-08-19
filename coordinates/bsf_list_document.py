@@ -92,6 +92,7 @@ class BSFPositionListDocument:
     x_safety_clearance: float = 2.0
     entry_edge_z: float | None = None
     entry_clearance: float = 1.0
+    full_cut_overlap_mm: float = 0.25
     end_mode: str = BSF_END_MODE_CHAIN
 
     @property
@@ -216,6 +217,7 @@ def document_to_dict(doc: BSFPositionListDocument) -> Dict[str, Any]:
             "x_safety_clearance": doc.x_safety_clearance,
             "entry_edge_z": doc.entry_edge_z,
             "entry_clearance": doc.entry_clearance,
+            "full_cut_overlap_mm": doc.full_cut_overlap_mm,
         },
         "tool": {
             "profile": doc.tool_profile_key,
@@ -309,6 +311,12 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         entry_clearance = _require_finite(workpiece.get("entry_clearance"), "workpiece.entry_clearance")
     else:
         entry_clearance = 1.0
+    if "full_cut_overlap_mm" in workpiece:
+        full_cut_overlap_mm = _require_finite(workpiece.get("full_cut_overlap_mm"), "workpiece.full_cut_overlap_mm")
+        if full_cut_overlap_mm < 0:
+            raise BSFDocumentError("Schneiden-Ueberdeckung C muss >= 0 sein.")
+    else:
+        full_cut_overlap_mm = 0.25
 
     tool_profile_key: str | None = None
     if version >= 2:
@@ -429,6 +437,7 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         x_safety_clearance=x_safety_clearance,
         entry_edge_z=entry_edge_z,
         entry_clearance=entry_clearance,
+        full_cut_overlap_mm=full_cut_overlap_mm,
         end_mode=end_mode,
     )
 
@@ -497,6 +506,7 @@ def build_bsf_document(
     x_safety_clearance: float = 2.0,
     entry_edge_z: float | None = None,
     entry_clearance: float = 1.0,
+    full_cut_overlap_mm: float = 0.25,
     end_mode: str = BSF_END_MODE_CHAIN,
 ) -> BSFPositionListDocument:
     if raw_surface_z is not None and not math.isfinite(raw_surface_z):
@@ -509,6 +519,8 @@ def build_bsf_document(
         raise BSFDocumentError("Ausklapp-Sicherheitsabstand X muss >= 0 sein.")
     if not math.isfinite(entry_clearance) or entry_clearance < 0:
         raise BSFDocumentError("Eintritts-Sicherheitsabstand A muss >= 0 sein.")
+    if not math.isfinite(full_cut_overlap_mm) or full_cut_overlap_mm < 0:
+        raise BSFDocumentError("Schneiden-Ueberdeckung C muss >= 0 sein.")
     try:
         end_mode = validate_bsf_end_mode(end_mode)
     except ValueError:
@@ -584,5 +596,6 @@ def build_bsf_document(
         x_safety_clearance=float(x_safety_clearance),
         entry_edge_z=float(entry_edge_z) if entry_edge_z is not None else None,
         entry_clearance=float(entry_clearance),
+        full_cut_overlap_mm=float(full_cut_overlap_mm),
         end_mode=end_mode,
     )
