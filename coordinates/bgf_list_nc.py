@@ -38,5 +38,4 @@ def emit_bgf_coordinate_program_body(
         lines.extend(sequence_for_position(pos))
         lines.append(f"L {fmt_axis('Z', safe_z)} R0 FMAX ; Rueckzug vor naechster XY-Fahrt")
 
-    lines.append(f"L {fmt_axis('Z', end_safe_z)} R0 FMAX")
     return lines

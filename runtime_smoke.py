@@ -14,7 +14,12 @@ import traceback
 from typing import Any, Dict, List
 
 from app_info import APP_AUTHOR, APP_EMAIL, APP_NAME, APP_VERSION, APP_WEBSITE
-from bgf_chain import require_bgf_part_circle_chain_safe
+from bgf_chain import (
+    BGF_END_MODE_CHAIN,
+    BGF_END_MODE_STANDALONE,
+    bgf_end_mode_label,
+    require_bgf_part_circle_end_mode,
+)
 from app_paths import APP_ICON_PNG_REL, resource_path
 from coordinates import BGFCoordinatePosition, BSFCoordinatePosition
 from nc_state import NC_STATE_CURRENT, NC_STATE_STALE
@@ -119,9 +124,14 @@ def _set_entry(app, key: str, value: str) -> None:
     app.entries[key].insert(0, value)
 
 
+def _set_bgf_end_mode(app, end_mode: str) -> None:
+    app.bgf_end_mode_var.set(bgf_end_mode_label(end_mode))
+
+
 def _prepare_bgf_single(app) -> None:
     app.mode_var.set(MODE_BGF)
     app.on_mode_change(None)
+    _set_bgf_end_mode(app, BGF_END_MODE_CHAIN)
     app.bgf_size_var.set("M10")
     app.load_bgf_values()
     app.position_mode_var.set("Einzelposition")
@@ -205,6 +215,7 @@ def _programmer_runtime(app) -> Dict[str, str]:
     tmp = tempfile.mkdtemp(prefix="nc_smoke_prog_")
     app.mode_var.set(MODE_BGF)
     app.on_mode_change(None)
+    _set_bgf_end_mode(app, BGF_END_MODE_CHAIN)
     app.coord_rows = [BGFCoordinatePosition(0, 0, 0, 20.0)]
     app.position_mode_var.set("Koordinatenliste")
     app.on_position_mode_change(None)
@@ -214,10 +225,15 @@ def _programmer_runtime(app) -> Dict[str, str]:
     loaded_bgf = load_document_json(bgf_json)
     if loaded_bgf.programmer != name:
         raise RuntimeError("BGF JSON Roundtrip verlor den Programmierer.")
+    if loaded_bgf.end_mode != BGF_END_MODE_CHAIN:
+        raise RuntimeError("BGF JSON Roundtrip verlor den Programmende-Modus.")
     legacy_bgf = bgf_to_dict(loaded_bgf)
     del legacy_bgf["program"]["programmer"]
+    del legacy_bgf["program"]["end_mode"]
     if parse_bgf(legacy_bgf).programmer != "":
         raise RuntimeError("Legacy BGF JSON ohne programmer nicht leer.")
+    if parse_bgf(legacy_bgf).end_mode != BGF_END_MODE_CHAIN:
+        raise RuntimeError("Legacy BGF JSON ohne end_mode defaultet nicht auf CHAIN_CALL_PGM.")
 
     app.mode_var.set(MODE_BSF)
     app.on_mode_change(None)
@@ -256,6 +272,7 @@ def _programmer_runtime(app) -> Dict[str, str]:
         "bgf_json": "True",
         "bsf_json": "True",
         "legacy_json": "True",
+        "bgf_end_mode": "True",
         "csv": "True",
         "keyword": "PROGRAMMIERER",
     }
@@ -264,6 +281,7 @@ def _programmer_runtime(app) -> Dict[str, str]:
 def _bgf_nc(app) -> Dict[str, str]:
     app.mode_var.set(MODE_BGF)
     app.on_mode_change(None)
+    _set_bgf_end_mode(app, BGF_END_MODE_CHAIN)
     app.bgf_size_var.set("M10")
     app.load_bgf_values()
     app.position_mode_var.set("Einzelposition")
@@ -322,46 +340,69 @@ def _hpr5000_m16(app) -> Dict[str, str]:
         ("raw_stock_top_z", "0"),
     ):
         _set_entry(app, key, val)
-    app.generate_bgf_code()
-    code = app.output_text.get("1.0", "end")
-    if "BEGIN PGM" not in code:
-        raise RuntimeError("HPR5000 M16: kein NC erzeugt.")
-    blk = [ln for ln in code.splitlines() if ln.startswith("BLK FORM")]
-    if len(blk) != 2:
-        raise RuntimeError("HPR5000 M16: BLK FORM fehlt.")
-    if "Z-60.0000" not in blk[0] or "Z+0.0000" not in blk[1]:
-        raise RuntimeError(f"HPR5000 M16: BLK FORM Z falsch: {blk}")
-    if "X-500.0000" not in blk[0] or "X+500.0000" not in blk[1]:
-        raise RuntimeError(f"HPR5000 M16: BLK FORM XY falsch: {blk}")
-    loop = code.split("LBL 1 ; Schleifenanfang Teilkreis", 1)
-    if len(loop) < 2:
-        raise RuntimeError("HPR5000 M16: Teilkreis-Schleife fehlt.")
-    body = loop[1].split("FN 12:", 1)[0]
-    if "CC X+0.0000 Y+0.0000 ; Teilkreis-Mitte / Pol" not in body:
-        raise RuntimeError("HPR5000 M16: CC Restore fehlt in der Schleife.")
-    if "LP PR+215.0000 PA+Q1 R0 FMAX ; Teilkreisposition" not in code:
-        raise RuntimeError("HPR5000 M16: Teilkreis-LP fehlt.")
-    if "CALL LBL 100" not in code:
-        raise RuntimeError("HPR5000 M16: CALL LBL 100 fehlt.")
-    for needle in (
-        "L Z+0.0000 R0 FMAX M13",
-        "L Z-12.1000 F682 M",
-        "L Z-47.1160 F2046 M",
-        "L Z-43.0750 R0 FMAX M",
-    ):
-        if needle not in code:
-            raise RuntimeError(f"HPR5000 M16: fehlende Bearbeitungs-Z: {needle}")
-    flow = require_bgf_part_circle_chain_safe(code, 6)
+    def build(end_mode: str):
+        _set_bgf_end_mode(app, end_mode)
+        app.generate_bgf_code()
+        code = app.output_text.get("1.0", "end")
+        if "BEGIN PGM" not in code:
+            raise RuntimeError("HPR5000 M16: kein NC erzeugt.")
+        blk = [ln for ln in code.splitlines() if ln.startswith("BLK FORM")]
+        if len(blk) != 2:
+            raise RuntimeError("HPR5000 M16: BLK FORM fehlt.")
+        if "Z-60.0000" not in blk[0] or "Z+0.0000" not in blk[1]:
+            raise RuntimeError(f"HPR5000 M16: BLK FORM Z falsch: {blk}")
+        if "X-500.0000" not in blk[0] or "X+500.0000" not in blk[1]:
+            raise RuntimeError(f"HPR5000 M16: BLK FORM XY falsch: {blk}")
+        loop = code.split("LBL 1 ; Schleifenanfang Teilkreis", 1)
+        if len(loop) < 2:
+            raise RuntimeError("HPR5000 M16: Teilkreis-Schleife fehlt.")
+        body = loop[1].split("FN 12:", 1)[0]
+        if "CC X+0.0000 Y+0.0000 ; Teilkreis-Mitte / Pol" not in body:
+            raise RuntimeError("HPR5000 M16: CC Restore fehlt in der Schleife.")
+        if "LP PR+215.0000 PA+Q1 R0 FMAX ; Teilkreisposition" not in code:
+            raise RuntimeError("HPR5000 M16: Teilkreis-LP fehlt.")
+        if "CALL LBL 100" not in code:
+            raise RuntimeError("HPR5000 M16: CALL LBL 100 fehlt.")
+        for needle in (
+            "L Z+0.0000 R0 FMAX M13",
+            "L Z-12.1000 F682 M",
+            "L Z-47.1160 F2046 M",
+            "L Z-43.0750 R0 FMAX M",
+        ):
+            if needle not in code:
+                raise RuntimeError(f"HPR5000 M16: fehlende Bearbeitungs-Z: {needle}")
+        return code, require_bgf_part_circle_end_mode(code, 6, end_mode)
+
+    code_chain, flow_chain = build(BGF_END_MODE_CHAIN)
+    code_standalone, flow_standalone = build(BGF_END_MODE_STANDALONE)
     return {
         "cc_restore": "True",
         "blk_z": "True",
         "machining_z": "True",
-        "bgf_part_circle_count": str(flow.simulated_machining_count == 6),
-        "bgf_no_fallthrough": str(not flow.linear_fallthrough),
-        "bgf_call_pgm_return_structure": str(flow.call_pgm_safe_return),
-        "hpr5000_6_positions": str(
-            flow.fn12_lt_count == 6 and flow.simulated_machining_count == 6
+        "bgf_chain_mode": str(flow_chain.final_end_mode == BGF_END_MODE_CHAIN),
+        "bgf_standalone_mode": str(flow_standalone.final_end_mode == BGF_END_MODE_STANDALONE),
+        "bgf_chain_no_m30": str(flow_chain.m30_count == 0),
+        "bgf_standalone_one_m30": str(
+            flow_standalone.m30_count == 1 and flow_standalone.m30_final_only
         ),
+        "bgf_no_fallthrough": str(
+            not flow_chain.linear_fallthrough and not flow_standalone.linear_fallthrough
+        ),
+        "bgf_count_6": str(
+            flow_chain.simulated_machining_count == 6 and flow_standalone.simulated_machining_count == 6
+        ),
+        "bgf_call_pgm_return_structure": str(flow_chain.call_pgm_safe_return),
+        "hpr5000_6_positions": str(
+            flow_chain.fn12_lt_count == 6
+            and flow_chain.simulated_machining_count == 6
+            and flow_standalone.fn12_lt_count == 6
+            and flow_standalone.simulated_machining_count == 6
+        ),
+        "standalone_m30_final_only": str(
+            flow_standalone.m30_count == 1 and code_standalone.rstrip().splitlines()[-2].endswith("M30")
+        ),
+        "chain_comment": str("; PROGRAMMENDE: VERKETTUNG / CALL PGM" in code_chain),
+        "standalone_comment": str("; PROGRAMMENDE: EINZELPROGRAMM / M30" in code_standalone),
     }
 
 
@@ -385,6 +426,7 @@ def _nc_stale(app) -> Dict[str, str]:
         ("raw_stock_top_z", "0"),
     ):
         _set_entry(app, key, val)
+    _set_bgf_end_mode(app, BGF_END_MODE_CHAIN)
     app.generate_bgf_code()
     output = app.output_text.get("1.0", "end")
     if app.nc_guard.nc_state(app, output_text=output) != NC_STATE_CURRENT:
@@ -409,11 +451,16 @@ def _nc_stale(app) -> Dict[str, str]:
         raise RuntimeError(f"Stale-Smoke: BLK FORM ±750 fehlt: {blk_after}")
     if app._require_current_nc_for_output() is None:
         raise RuntimeError("Stale-Smoke: Export nach Regenerate blockiert.")
+    _set_bgf_end_mode(app, BGF_END_MODE_STANDALONE)
+    app.refresh_nc_output_status()
+    if app.nc_guard.nc_state(app, output_text=app.output_text.get("1.0", "end")) != NC_STATE_STALE:
+        raise RuntimeError("Stale-Smoke: nach Endmodus-Aenderung nicht STALE.")
     return {
         "stale_after_change": "True",
         "export_blocked": "True",
         "regenerate_current": "True",
         "export_pass": "True",
+        "stale_after_end_mode_change": "True",
     }
 
 
@@ -426,6 +473,7 @@ def _bgf_files(app) -> str:
     )
 
     tmp = tempfile.mkdtemp(prefix="nc_smoke_bgf_")
+    _set_bgf_end_mode(app, BGF_END_MODE_CHAIN)
     app.coord_rows = [
         BGFCoordinatePosition(0, 0, 20.0, 20.0),
         BGFCoordinatePosition(100, 50, 25.0, 20.0),

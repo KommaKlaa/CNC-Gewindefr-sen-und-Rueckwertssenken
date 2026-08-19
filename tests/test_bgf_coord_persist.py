@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 import bsf_generator_verbessert_v3 as gen
+from bgf_chain import BGF_END_MODE_CHAIN, BGF_END_MODE_STANDALONE
 from bgf_depth import DepthGateStatus, evaluate_bgf_depth
 from coordinates import (
     BGFCoordinatePosition,
@@ -57,9 +58,32 @@ class TestJsonRoundtrip(unittest.TestCase):
         self.assertEqual(loaded.approach_clearance, 5.0)
         self.assertEqual(loaded.safe_z, 100.0)
         self.assertEqual(loaded.end_safe_z, 200.0)
+        self.assertEqual(loaded.end_mode, BGF_END_MODE_CHAIN)
         self.assertEqual(len(loaded.positions), 2)
         self.assertEqual(loaded.positions[0], positions[0])
         self.assertEqual(loaded.positions[1], positions[1])
+
+    def test_roundtrip_end_mode(self):
+        positions = [BGFCoordinatePosition(0, 0, 0, 20.0)]
+        doc = _m10_doc(positions, end_mode=BGF_END_MODE_STANDALONE)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "test_end_mode.bgf.json")
+            save_document_json(path, doc)
+            loaded = load_document_json(path)
+        self.assertEqual(loaded.end_mode, BGF_END_MODE_STANDALONE)
+
+    def test_legacy_without_end_mode_defaults_to_chain(self):
+        loaded = parse_document_dict(
+            {
+                "format": FORMAT_NAME,
+                "version": FORMAT_VERSION,
+                "tool": {"thread_size": "M10", "article_no": "5089810000", "tool_number": 8},
+                "program": {"name": "T"},
+                "safety": {"approach_clearance": 1.0, "safe_z": 100.0, "end_safe_z": 200.0},
+                "positions": [{"x": 0, "y": 0, "surface_z": 0, "thread_depth": 20.0}],
+            }
+        )
+        self.assertEqual(loaded.end_mode, BGF_END_MODE_CHAIN)
 
     def test_template_status_after_load(self):
         positions = [BGFCoordinatePosition(0, 0, 0, 25.06)]

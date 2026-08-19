@@ -122,15 +122,22 @@ def _run_smoke(exe: Path, label: str) -> Dict[str, object]:
     if str(hpr.get("machining_z")) != "True":
         raise ReleaseAborted(f"HPR5000-M16-Smoke fehlgeschlagen ({label}): {hpr}")
     for key in (
-        "bgf_part_circle_count",
+        "bgf_chain_mode",
+        "bgf_standalone_mode",
+        "bgf_chain_no_m30",
+        "bgf_standalone_one_m30",
         "bgf_no_fallthrough",
+        "bgf_count_6",
         "bgf_call_pgm_return_structure",
         "hpr5000_6_positions",
+        "standalone_m30_final_only",
+        "chain_comment",
+        "standalone_comment",
     ):
         if str(hpr.get(key)) != "True":
             raise ReleaseAborted(f"HPR5000-M16-Chain-Smoke fehlgeschlagen ({label}): {hpr}")
     stale = data.get("steps", {}).get("nc_stale") or {}
-    if str(stale.get("export_pass")) != "True":
+    if str(stale.get("export_pass")) != "True" or str(stale.get("stale_after_end_mode_change")) != "True":
         raise ReleaseAborted(f"Stale-NC-Smoke fehlgeschlagen ({label}): {stale}")
     bsf = data.get("steps", {}).get("bsf_nc") or {}
     if str(bsf.get("has_begin")) != "True":
@@ -138,7 +145,18 @@ def _run_smoke(exe: Path, label: str) -> Dict[str, object]:
     if not data.get("steps", {}).get("heidenhain_h"):
         raise ReleaseAborted(f".H-Export-Smoke fehlgeschlagen ({label})")
     prog = data.get("steps", {}).get("programmer") or {}
-    for key in ("empty_bgf", "empty_bsf", "named_bgf", "named_bsf", "cp1252", "bgf_json", "bsf_json", "legacy_json", "csv"):
+    for key in (
+        "empty_bgf",
+        "empty_bsf",
+        "named_bgf",
+        "named_bsf",
+        "cp1252",
+        "bgf_json",
+        "bsf_json",
+        "legacy_json",
+        "bgf_end_mode",
+        "csv",
+    ):
         if str(prog.get(key)) != "True":
             raise ReleaseAborted(f"Programmer-Smoke fehlgeschlagen ({label}): {prog}")
     return data

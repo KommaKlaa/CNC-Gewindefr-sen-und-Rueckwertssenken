@@ -54,7 +54,17 @@ from coordinates import (
     write_bsf_csv_file,
 )
 
-from bgf_chain import chain_end_label_line, skip_over_local_subprogram_line
+from bgf_chain import (
+    BGF_END_MODE_CHAIN,
+    BGF_END_MODE_STANDALONE,
+    bgf_end_mode_from_label,
+    bgf_end_mode_label,
+    bgf_end_mode_comment,
+    chain_end_label_line,
+    final_program_end_line,
+    skip_over_local_subprogram_line,
+    validate_bgf_end_mode,
+)
 from bgf_surface import (
     DEFAULT_APPROACH_CLEARANCE,
     absolute_from_surface,
@@ -323,6 +333,7 @@ class BSFGeneratorGUI:
         self.bgf_info_labels: Dict[str, ttk.Label] = {}
         self._tool_num_var = tk.StringVar(value="8")
         self.programmer_var = tk.StringVar(value="")
+        self.bgf_end_mode_var = tk.StringVar(value=bgf_end_mode_label(BGF_END_MODE_CHAIN))
 
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
@@ -878,6 +889,32 @@ class BSFGeneratorGUI:
             entry.grid(row=row, column=col + 1, sticky=tk.W, pady=2, padx=(0, 16))
             self.entries[key] = entry
 
+        self._bgf_end_mode_label = ttk.Label(frame, text="Programmende:")
+        self._bgf_end_mode_label.grid(row=3, column=0, sticky=tk.W, pady=2, padx=(0, 4))
+        self.bgf_end_mode_combo = ttk.Combobox(
+            frame,
+            textvariable=self.bgf_end_mode_var,
+            values=[
+                bgf_end_mode_label(BGF_END_MODE_CHAIN),
+                bgf_end_mode_label(BGF_END_MODE_STANDALONE),
+            ],
+            state="readonly",
+            width=24,
+        )
+        self.bgf_end_mode_combo.grid(row=3, column=1, sticky=tk.W, pady=2, padx=(0, 16))
+        self.entries["bgf_end_mode"] = self.bgf_end_mode_combo
+        self._bgf_end_mode_help = ttk.Label(
+            frame,
+            text=(
+                "Verkettung / CALL PGM: Fuer Programme, die aus einem Hauptprogramm "
+                "ueber CALL PGM aufgerufen werden.\n"
+                "Einzelprogramm / M30: Fuer Programme, die direkt gestartet werden "
+                "und mit M30 enden."
+            ),
+            font=("Segoe UI", 8),
+        )
+        self._bgf_end_mode_help.grid(row=3, column=2, columnspan=4, sticky=tk.W, pady=2)
+
         # Alias: frueheres practice_frame / input_frame
         self.practice_frame = frame
         self.input_frame = frame
@@ -1413,6 +1450,13 @@ class BSFGeneratorGUI:
     def is_bgf_mode(self) -> bool:
         return self.mode_var.get() == MODE_BGF
 
+    def get_bgf_end_mode(self) -> str:
+        raw = self.bgf_end_mode_var.get()
+        try:
+            return bgf_end_mode_from_label(raw)
+        except ValueError:
+            return validate_bgf_end_mode(raw)
+
     def on_mode_change(self, event) -> None:
         is_bgf = self.is_bgf_mode()
 
@@ -1433,6 +1477,9 @@ class BSFGeneratorGUI:
             show_pack(self.position_frame, fill=tk.X, pady=4)
             show_pack(self.bgf_processing_frame, fill=tk.X, pady=4)
             self._set_position_combo_values(POSITION_LABELS_BGF)
+            self._bgf_end_mode_label.grid()
+            self.bgf_end_mode_combo.grid()
+            self._bgf_end_mode_help.grid()
             if self.entries.get("program_name"):
                 current = self.entries["program_name"].get().strip()
                 if current in ("", "BSF_RUECKWAERTS"):
@@ -1444,6 +1491,9 @@ class BSFGeneratorGUI:
             show_pack(self.bsf_processing_frame, fill=tk.X, pady=4)
             show_pack(self.bsf_machine_frame, fill=tk.X, pady=4)
             self._set_position_combo_values(POSITION_LABELS_BSF)
+            self._bgf_end_mode_label.grid_remove()
+            self.bgf_end_mode_combo.grid_remove()
+            self._bgf_end_mode_help.grid_remove()
             if self.entries.get("program_name"):
                 current = self.entries["program_name"].get().strip()
                 if current in ("", "BGF_TK"):
@@ -2122,6 +2172,10 @@ class BSFGeneratorGUI:
             programmer = normalize_programmer(self.programmer_var.get())
         except ProgrammerError as exc:
             raise BGFDocumentError(f"Programmierer: {exc.message}") from exc
+        try:
+            end_mode = self.get_bgf_end_mode()
+        except ValueError as exc:
+            raise BGFDocumentError(str(exc)) from exc
         return build_document(
             thread_size=data.size,
             article_no=data.article_no,
@@ -2132,6 +2186,7 @@ class BSFGeneratorGUI:
             end_safe_z=end_safe_z,
             positions=self.coord_rows,
             programmer=programmer,
+            end_mode=end_mode,
         )
 
     def _apply_position_list_document(self, doc) -> None:
@@ -2160,6 +2215,7 @@ class BSFGeneratorGUI:
         self.entries["safe_z"].insert(0, f"{doc.safe_z:g}")
         self.entries["end_safe_z"].delete(0, tk.END)
         self.entries["end_safe_z"].insert(0, f"{doc.end_safe_z:g}")
+        self.bgf_end_mode_var.set(bgf_end_mode_label(doc.end_mode))
         self.coord_rows = list(doc.positions)
         self.position_mode_var.set("Koordinatenliste")
         self.on_position_mode_change(None)
@@ -2228,6 +2284,7 @@ class BSFGeneratorGUI:
             "tool": self.entries["tool_num"].get(),
             "program": self.entries["program_name"].get(),
             "programmer": self.programmer_var.get(),
+            "end_mode": self.get_bgf_end_mode(),
             "clearance": self.entries["approach_clearance"].get(),
             "safe_z": self.entries["safe_z"].get(),
             "end_safe_z": self.entries["end_safe_z"].get(),
@@ -2244,6 +2301,7 @@ class BSFGeneratorGUI:
             self.entries["program_name"].delete(0, tk.END)
             self.entries["program_name"].insert(0, snapshot["program"])
             self.programmer_var.set(snapshot["programmer"])
+            self.bgf_end_mode_var.set(bgf_end_mode_label(snapshot["end_mode"]))
             self.entries["approach_clearance"].delete(0, tk.END)
             self.entries["approach_clearance"].insert(0, snapshot["clearance"])
             self.entries["safe_z"].delete(0, tk.END)
@@ -2936,6 +2994,7 @@ class BSFGeneratorGUI:
             f"; Hersteller-Template Gewindetiefe: {data.thread_length:.4f} mm"
         )
         code.append(f"; Sicherheitsabstand ueber Oberflaeche: {clearance:.4f} mm")
+        code.append(bgf_end_mode_comment(self.get_bgf_end_mode()))
         if position_mode != PositionMode.COORDINATES:
             depth_info = self.evaluate_current_bgf_depth()
             if depth_info.depth_mode_label:
@@ -3004,7 +3063,8 @@ class BSFGeneratorGUI:
                     mill_start_depth=depth_ev.nc_mill_start_depth,
                 )
             )
-            code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX")
+            code.append(chain_end_label_line())
+            code.append(final_program_end_line(common["end_safe_z"], self.get_bgf_end_mode()))
             code.append(f"END PGM {program_name} MM")
         elif position_mode == PositionMode.COORDINATES:
             positions = self.prepare_bgf_coordinate_list()
@@ -3044,6 +3104,8 @@ class BSFGeneratorGUI:
                     approach_clearance=clearance,
                 )
             )
+            code.append(chain_end_label_line())
+            code.append(final_program_end_line(common["end_safe_z"], self.get_bgf_end_mode()))
             code.append(f"END PGM {program_name} MM")
         else:
             if circle_surface_z is None:
@@ -3059,7 +3121,6 @@ class BSFGeneratorGUI:
             self.add_counted_circle_loop(
                 code, common, sub_label=100, restore_pole_each_iteration=True
             )
-            code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX")
             code.append(skip_over_local_subprogram_line())
             code.append("")
             code.append("LBL 100 ; Unterprogramm BGF auf aktueller XY-Position")
@@ -3080,6 +3141,7 @@ class BSFGeneratorGUI:
             code.append(f"L {fmt_axis('Z', common['safe_z'])} R0 FMAX")
             code.append("LBL 0")
             code.append(chain_end_label_line())
+            code.append(final_program_end_line(common["end_safe_z"], self.get_bgf_end_mode()))
             code.append(f"END PGM {program_name} MM")
 
         self.set_output(code)

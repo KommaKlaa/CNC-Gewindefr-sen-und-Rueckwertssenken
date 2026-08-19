@@ -10,6 +10,7 @@ from unittest import mock
 import tkinter as tk
 
 import bsf_generator_verbessert_v3 as gen
+from bgf_chain import BGF_END_MODE_CHAIN, BGF_END_MODE_STANDALONE, bgf_end_mode_label
 from coordinates import BGFCoordinatePosition
 from nc_state import (
     NC_STATE_CURRENT,
@@ -45,6 +46,7 @@ def _generate_bgf_circle(app, *, blank_size: str = "1000", start_angle: str = "0
     _set(app, "blank_size", blank_size)
     _set(app, "blank_height", "60")
     _set(app, "raw_stock_top_z", "30")
+    app.bgf_end_mode_var.set(bgf_end_mode_label(BGF_END_MODE_CHAIN))
     app.generate_code()
     return app.output_text.get("1.0", tk.END)
 
@@ -195,6 +197,19 @@ class TestNcStaleGuard(unittest.TestCase):
         _generate_bgf_circle(app)
         app.programmer_var.set("Tester")
         self.assertEqual(self._state(), NC_STATE_STALE)
+
+    def test_end_mode_change_stale_then_regenerate(self):
+        app = self.app
+        _generate_bgf_circle(app)
+        self.assertEqual(self._state(), NC_STATE_CURRENT)
+        self.assertIn("; PROGRAMMENDE: VERKETTUNG / CALL PGM", app.output_text.get("1.0", tk.END))
+        app.bgf_end_mode_var.set(bgf_end_mode_label(BGF_END_MODE_STANDALONE))
+        self.assertEqual(self._state(), NC_STATE_STALE)
+        app.generate_code()
+        self.assertEqual(self._state(), NC_STATE_CURRENT)
+        code = app.output_text.get("1.0", tk.END)
+        self.assertIn("; PROGRAMMENDE: EINZELPROGRAMM / M30", code)
+        self.assertRegex(code, r"LBL 999\s+L Z\+200\.0000 R0 FMAX M30\s+END PGM")
 
     def test_unchanged_state_export_pass(self):
         app = self.app

@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from app_info import APP_AUTHOR
+from bgf_chain import BGF_END_MODE_CHAIN, BGF_END_MODE_STANDALONE, bgf_end_mode_label
 from coordinates import (
     BGFCoordinatePosition,
     BSFCoordinatePosition,
@@ -349,6 +350,7 @@ class TestProgrammerJson(unittest.TestCase):
         app.bgf_size_var.set("M10")
         app.load_bgf_values()
         app.programmer_var.set("Max Mustermann")
+        app.bgf_end_mode_var.set(bgf_end_mode_label(BGF_END_MODE_STANDALONE))
         app.coord_rows = [BGFCoordinatePosition(0, 0, 0, 20.0)]
         doc = app._collect_position_list_document()
         with tempfile.TemporaryDirectory() as tmp:
@@ -356,10 +358,13 @@ class TestProgrammerJson(unittest.TestCase):
             save_document_json(path, doc)
             loaded = load_document_json(path)
         app.programmer_var.set("")
+        app.bgf_end_mode_var.set(bgf_end_mode_label(BGF_END_MODE_CHAIN))
         app._apply_position_list_document(loaded)
         self.assertEqual(app.programmer_var.get(), "Max Mustermann")
+        self.assertEqual(app.get_bgf_end_mode(), BGF_END_MODE_STANDALONE)
         app.generate_bgf_code()
         self.assertIn("; PROGRAMMIERER: Max Mustermann", app.output_text.get("1.0", "end"))
+        self.assertIn("; PROGRAMMENDE: EINZELPROGRAMM / M30", app.output_text.get("1.0", "end"))
         root.destroy()
 
 

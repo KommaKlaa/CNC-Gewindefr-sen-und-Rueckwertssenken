@@ -12,6 +12,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from bgf_chain import BGF_END_MODE_CHAIN, validate_bgf_end_mode
 from .bgf_position import BGFCoordinatePosition
 from nc_programmer import ProgrammerError, normalize_programmer
 
@@ -41,6 +42,7 @@ class BGFPositionListDocument:
     end_safe_z: float
     positions: Tuple[BGFCoordinatePosition, ...] = field(default_factory=tuple)
     programmer: str = ""
+    end_mode: str = BGF_END_MODE_CHAIN
 
     @property
     def format_name(self) -> str:
@@ -120,6 +122,7 @@ def document_to_dict(doc: BGFPositionListDocument) -> Dict[str, Any]:
         "program": {
             "name": doc.program_name,
             "programmer": doc.programmer,
+            "end_mode": doc.end_mode,
         },
         "safety": {
             "approach_clearance": doc.approach_clearance,
@@ -174,6 +177,13 @@ def parse_document_dict(data: Any) -> BGFPositionListDocument:
         raise BGFDocumentError("Abschnitt 'program' fehlt oder ist ungueltig.")
     program_name = _require_str(program.get("name"), "program.name")
     programmer = _optional_programmer(program.get("programmer"))
+    end_mode = program.get("end_mode", BGF_END_MODE_CHAIN)
+    if not isinstance(end_mode, str):
+        raise BGFDocumentError("Feld 'program.end_mode' muss Text sein.")
+    try:
+        end_mode = validate_bgf_end_mode(end_mode)
+    except ValueError as exc:
+        raise BGFDocumentError(str(exc)) from exc
 
     safety = data.get("safety")
     if not isinstance(safety, dict):
@@ -207,6 +217,7 @@ def parse_document_dict(data: Any) -> BGFPositionListDocument:
         end_safe_z=end_safe_z,
         positions=positions,
         programmer=programmer,
+        end_mode=end_mode,
     )
 
 
@@ -278,6 +289,7 @@ def build_document(
     end_safe_z: float,
     positions: Sequence[BGFCoordinatePosition],
     programmer: str = "",
+    end_mode: str = BGF_END_MODE_CHAIN,
 ) -> BGFPositionListDocument:
     if not positions:
         raise BGFDocumentError("Keine Bearbeitungspositionen vorhanden.")
@@ -287,6 +299,10 @@ def build_document(
         programmer_norm = normalize_programmer(programmer)
     except ProgrammerError as exc:
         raise BGFDocumentError(f"Programmierer: {exc.message}") from exc
+    try:
+        end_mode = validate_bgf_end_mode(end_mode)
+    except ValueError as exc:
+        raise BGFDocumentError(str(exc)) from exc
     for idx, pos in enumerate(positions, start=1):
         for name, value in (
             ("X", pos.x),
@@ -309,4 +325,5 @@ def build_document(
         end_safe_z=end_safe_z,
         positions=tuple(positions),
         programmer=programmer_norm,
+        end_mode=end_mode,
     )
