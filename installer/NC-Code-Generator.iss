@@ -9,7 +9,9 @@
 ;
 ; This script must not hardcode MyAppVersion.
 ; Offline only: no downloads, no Python install, no auto-updater.
+; No VC-Runtime or other downloads during Setup.
 ; User data under {userappdata}\NC-Code Generator is never deleted.
+; Downgrade is fail-closed (see version_guard.iss). Same-version reinstall is allowed.
 
 #ifdef MyAppDefinesInclude
   #include MyAppDefinesInclude
@@ -106,3 +108,5 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 
 ; No [UninstallDelete] for {userappdata}:
 ; Safety-Notice acceptance and user projects must survive uninstall.
+
+#include "version_guard.iss"

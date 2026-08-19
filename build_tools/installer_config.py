@@ -32,6 +32,7 @@ from app_info import (  # noqa: E402
     EXE_FILENAME,
     WINDOWS_COMPANY_NAME,
     WINDOWS_FILE_VERSION,
+    derive_windows_version,
 )
 from app_paths import APP_ICON_ICO_REL  # noqa: E402
 from release_packaging import (  # noqa: E402
@@ -57,6 +58,14 @@ ISS_RELATIVE = Path("installer") / "NC-Code-Generator.iss"
 INSTALLER_OUTPUT_DIR_REL = Path("installer") / "output"
 DEFINES_GENERATED_REL = Path("installer") / "defines.generated.iss"
 DEFAULT_INSTALL_DIR_INNO = r"{autopf}\NC-Code Generator"
+CODE_SIGNING = "NOT_CONFIGURED"
+DOWNGRADE_BLOCK_MESSAGE = (
+    "Eine neuere Version des NC-Code Generators ist bereits installiert."
+)
+VERSION_GUARD_REL = Path("installer") / "version_guard.iss"
+# Isolated installer tests only. Never used by the product ISS.
+TEST_APP_ID_GUID = "8F3C2A91-6B47-4E0D-9C55-2D7A1E4B8C10"
+TEST_APP_ID = "{{" + TEST_APP_ID_GUID + "}}"
 
 _GUID_RE = re.compile(
     r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
@@ -386,3 +395,146 @@ def user_settings_dir() -> Path:
     if appdata:
         return Path(appdata) / APP_NAME
     return Path.home() / ".nc-code-generator"
+
+
+def parse_semver(version: str) -> Tuple[int, int, int]:
+    """Numerisches major.minor.patch. Keine freien Strings."""
+    derive_windows_version(version)
+    parts = version.split(".")
+    return int(parts[0]), int(parts[1]), int(parts[2])
+
+
+def compare_semver(left: str, right: str) -> int:
+    """-1 wenn left < right, 0 gleich, 1 wenn left > right."""
+    a = parse_semver(left)
+    b = parse_semver(right)
+    if a < b:
+        return -1
+    if a > b:
+        return 1
+    return 0
+
+
+def downgrade_should_block(installed_version: str, setup_version: str) -> bool:
+    return compare_semver(installed_version, setup_version) > 0
+
+
+def version_guard_path(root: Optional[Path] = None) -> Path:
+    return (root or project_root()) / VERSION_GUARD_REL
+
+
+def windows_release_asset_names(app_version: str = APP_VERSION) -> Dict[str, str]:
+    derive_windows_version(app_version)
+    folder = f"NC-Code-Generator_{app_version}_Windows_x64"
+    setup = installer_filename(app_version)
+    return {
+        "folder": folder,
+        "zip": f"{folder}.zip",
+        "zip_sha256": f"{folder}.zip.sha256",
+        "setup": setup,
+        "setup_sha256": f"{setup}.sha256",
+        "sums": "SHA256SUMS.txt",
+        "manifest": "release_manifest.json",
+    }
+
+
+def write_named_sha256(path: Path) -> Tuple[Path, str]:
+    digest = sha256_file(path)
+    sidecar = Path(str(path) + ".sha256")
+    sidecar.write_text(f"{digest}  {path.name}\n", encoding="utf-8")
+    return sidecar, digest
+
+
+def verify_named_sha256(path: Path, sidecar: Path) -> str:
+    text = sidecar.read_text(encoding="utf-8")
+    listed = text.strip().split()
+    if not listed:
+        raise InstallerAborted("SHA256-Sidecar leer.")
+    expected = listed[0].lower()
+    actual = sha256_file(path)
+    if actual != expected:
+        raise InstallerAborted(f"SHA256-Sidecar stimmt nicht: {path.name}")
+    if path.name not in text:
+        raise InstallerAborted(f"SHA256-Sidecar ohne Dateiname: {path.name}")
+    if "/" in text or "\\" in text.split(None, 1)[-1]:
+        raise InstallerAborted("SHA256-Sidecar darf keine Pfade enthalten.")
+    return actual
+
+
+def write_asset_sha256sums(files: List[Path], dest: Path) -> Path:
+    """Deterministische SHA256SUMS (nur Dateinamen, sortiert)."""
+    rows: List[Tuple[str, str]] = []
+    for path in files:
+        if not path.is_file():
+            raise InstallerAborted(f"SHA256SUMS: Datei fehlt: {path.name}")
+        rows.append((path.name, sha256_file(path)))
+    rows.sort(key=lambda item: item[0].lower())
+    text = "\n".join(f"{digest}  {name}" for name, digest in rows) + "\n"
+    dest.write_text(text, encoding="utf-8")
+    return dest
+
+
+def verify_asset_sha256sums(files: List[Path], sums_path: Path) -> None:
+    if not sums_path.is_file():
+        raise InstallerAborted("SHA256SUMS.txt fehlt.")
+    listed: Dict[str, str] = {}
+    for raw in sums_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        digest, name = line.split("  ", 1)
+        if "/" in name or "\\" in name:
+            raise InstallerAborted("SHA256SUMS enthaelt Pfade.")
+        listed[name] = digest.lower()
+    expected: Dict[str, str] = {}
+    for path in files:
+        expected[path.name] = sha256_file(path)
+    if listed != expected:
+        raise InstallerAborted("SHA256SUMS stimmt nicht mit den Artefakten ueberein.")
+
+
+def start_menu_shortcut_path(app_name: str = APP_NAME) -> Path:
+    appdata = os.environ.get("APPDATA", "").strip()
+    return (
+        Path(appdata)
+        / "Microsoft"
+        / "Windows"
+        / "Start Menu"
+        / "Programs"
+        / f"{app_name}.lnk"
+    )
+
+
+def desktop_shortcut_path(app_name: str = APP_NAME) -> Path:
+    home = Path.home()
+    return home / "Desktop" / f"{app_name}.lnk"
+
+
+def git_tree_hash(root: Optional[Path] = None) -> Optional[str]:
+    base = root or project_root()
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        cwd=str(base),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        return None
+    return (completed.stdout or "").strip() or None
+
+
+def assert_no_absolute_paths(blob: str) -> None:
+    collapsed = blob.replace("/", "\\").replace("\\\\", "\\").lower()
+    if "e:\\jens\\" in collapsed or "c:\\users\\" in collapsed:
+        raise InstallerAborted("Release-Manifest enthaelt private absolute Pfade.")
+
+
+def release_paths_exist(root: Path, app_version: str) -> bool:
+    names = windows_release_asset_names(app_version)
+    release_root = root / "release"
+    zip_path = release_root / names["zip"]
+    folder = release_root / names["folder"]
+    return zip_path.is_file() or folder.is_dir()

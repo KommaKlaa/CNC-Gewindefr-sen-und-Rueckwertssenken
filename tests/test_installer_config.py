@@ -143,9 +143,21 @@ class TestIssScript(unittest.TestCase):
         # Real UninstallDelete section would start a line with [UninstallDelete]
         self.assertNotRegex(self.iss, r"(?m)^\[UninstallDelete\]")
 
+    def test_downgrade_guard_present(self):
+        guard = (self.path.parent / "version_guard.iss").read_text(encoding="utf-8")
+        self.assertIn("function CompareSemVer", guard)
+        self.assertIn("function InitializeSetup", guard)
+        self.assertIn(
+            "Eine neuere Version des NC-Code Generators ist bereits installiert.",
+            guard,
+        )
+        self.assertIn("GetInstalledDisplayVersion", guard)
+        self.assertIn("Uninstall", guard)
+        self.assertIn('#include "version_guard.iss"', self.iss)
+        self.assertNotIn('#define MyAppVersion "', guard)
+
     def test_appid_injected_not_rotated_inline_guid_only(self):
         self.assertIn("AppId={#MyAppId}", self.iss)
-        # GUID may appear in comments only as documentation; must still use define.
         self.assertIn("APP_ID_STABLE", self.iss)
 
 

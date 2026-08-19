@@ -207,9 +207,12 @@ def _smoke_install_cycle(
 
     tmp_root = Path(tempfile.mkdtemp(prefix="nc_installer_smoke_"))
     install_dir = tmp_root / "app"
+    desktop = Path.home() / "Desktop" / f"{APP_NAME}.lnk"
+    desktop_before = desktop.is_file()
     result: Dict[str, object] = {
         "install_dir": str(install_dir),
         "sentinel": str(sentinel),
+        "desktop_before": desktop_before,
     }
     try:
         _run_setup(setup_exe, install_dir)
@@ -258,6 +261,11 @@ def _smoke_install_cycle(
             / f"{APP_NAME}.lnk"
         )
         result["start_menu_before_uninstall"] = start_menu.is_file()
+        desktop_after = desktop.is_file()
+        created_desktop = (not desktop_before) and desktop_after
+        result["desktop_shortcut_created"] = created_desktop
+        if created_desktop:
+            raise InstallerAborted("Silent-Default hat Desktop-Link erzeugt.")
 
         _run_uninstall(install_dir)
         still_there = install_dir.exists() and any(install_dir.rglob(EXE_FILENAME))
