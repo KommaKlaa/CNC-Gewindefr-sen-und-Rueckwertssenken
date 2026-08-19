@@ -78,6 +78,14 @@ def _run_exe_smoke(exe: Path, label: str) -> Dict[str, object]:
     hpr = data.get("steps", {}).get("hpr5000_m16") or {}
     if str(hpr.get("machining_z")) != "True":
         raise InstallerAborted(f"HPR5000-M16-Smoke fehlgeschlagen ({label}): {hpr}")
+    for key in (
+        "bgf_part_circle_count",
+        "bgf_no_fallthrough",
+        "bgf_call_pgm_return_structure",
+        "hpr5000_6_positions",
+    ):
+        if str(hpr.get(key)) != "True":
+            raise InstallerAborted(f"HPR5000-M16-Chain-Smoke fehlgeschlagen ({label}): {hpr}")
     stale = data.get("steps", {}).get("nc_stale") or {}
     if str(stale.get("export_pass")) != "True":
         raise InstallerAborted(f"Stale-NC-Smoke fehlgeschlagen ({label}): {stale}")

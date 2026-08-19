@@ -14,6 +14,7 @@ import traceback
 from typing import Any, Dict, List
 
 from app_info import APP_AUTHOR, APP_EMAIL, APP_NAME, APP_VERSION, APP_WEBSITE
+from bgf_chain import require_bgf_part_circle_chain_safe
 from app_paths import APP_ICON_PNG_REL, resource_path
 from coordinates import BGFCoordinatePosition, BSFCoordinatePosition
 from nc_state import NC_STATE_CURRENT, NC_STATE_STALE
@@ -350,10 +351,17 @@ def _hpr5000_m16(app) -> Dict[str, str]:
     ):
         if needle not in code:
             raise RuntimeError(f"HPR5000 M16: fehlende Bearbeitungs-Z: {needle}")
+    flow = require_bgf_part_circle_chain_safe(code, 6)
     return {
         "cc_restore": "True",
         "blk_z": "True",
         "machining_z": "True",
+        "bgf_part_circle_count": str(flow.simulated_machining_count == 6),
+        "bgf_no_fallthrough": str(not flow.linear_fallthrough),
+        "bgf_call_pgm_return_structure": str(flow.call_pgm_safe_return),
+        "hpr5000_6_positions": str(
+            flow.fn12_lt_count == 6 and flow.simulated_machining_count == 6
+        ),
     }
 
 

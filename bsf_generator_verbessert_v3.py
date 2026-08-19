@@ -54,6 +54,7 @@ from coordinates import (
     write_bsf_csv_file,
 )
 
+from bgf_chain import chain_end_label_line, skip_over_local_subprogram_line
 from bgf_surface import (
     DEFAULT_APPROACH_CLEARANCE,
     absolute_from_surface,
@@ -3003,7 +3004,7 @@ class BSFGeneratorGUI:
                     mill_start_depth=depth_ev.nc_mill_start_depth,
                 )
             )
-            code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX M30")
+            code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX")
             code.append(f"END PGM {program_name} MM")
         elif position_mode == PositionMode.COORDINATES:
             positions = self.prepare_bgf_coordinate_list()
@@ -3058,7 +3059,8 @@ class BSFGeneratorGUI:
             self.add_counted_circle_loop(
                 code, common, sub_label=100, restore_pole_each_iteration=True
             )
-            code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX M30")
+            code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX")
+            code.append(skip_over_local_subprogram_line())
             code.append("")
             code.append("LBL 100 ; Unterprogramm BGF auf aktueller XY-Position")
             code.append(
@@ -3077,6 +3079,7 @@ class BSFGeneratorGUI:
             )
             code.append(f"L {fmt_axis('Z', common['safe_z'])} R0 FMAX")
             code.append("LBL 0")
+            code.append(chain_end_label_line())
             code.append(f"END PGM {program_name} MM")
 
         self.set_output(code)

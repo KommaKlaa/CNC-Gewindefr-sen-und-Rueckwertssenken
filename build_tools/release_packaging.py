@@ -55,6 +55,7 @@ APP_SOURCE_RELATIVE = (
     "stock_z.py",
     "bsf_generator_verbessert_v3.py",
     "bsf_blade.py",
+    "bgf_chain.py",
     "bgf_depth.py",
     "bgf_depth_approvals.py",
     "bgf_depth_reference.py",
