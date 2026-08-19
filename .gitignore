@@ -33,3 +33,4 @@ installer/defines.generated.iss
 
 # HEULE/manufacturer drawings – never commit
 *.pdf
+assets/manufacturer/heule/*

@@ -625,7 +625,7 @@ class BSFGeneratorGUI:
 
         fields = [
             (0, 0, "Bund-Dicke (mm):", "bund_thickness", "18"),
-            (0, 2, "Senk-Fertigmaß (mm):", "sink_depth", "38"),
+            (0, 2, "Fertigmaß ab Bezugsebene [mm]:", "sink_depth", "38"),
             (0, 4, "Freifahr-Tiefe unten (mm):", "clearance", "23"),
             (1, 0, "Wartezeit Druckaufbau (s):", "dwell_time", "1.5"),
         ]
@@ -652,21 +652,42 @@ class BSFGeneratorGUI:
         self.entries["bsf_reference_z"].grid(row=2, column=1, sticky=tk.W, pady=2, padx=(0, 12))
         ttk.Label(
             frame,
-            text="Absolute Z-Koordinate der Werkstueckflaeche, an der die Bohrung beginnt.",
+            text="Werkstuecknullpunkt: Z+0 ist das aktive Werkstueckkoordinatensystem.",
             font=("Segoe UI", 8),
         ).grid(row=2, column=2, columnspan=4, sticky=tk.W, pady=2)
+
+        ttk.Label(frame, text="Rohflaeche / Ist-Z [mm] (optional):").grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.entries["raw_surface_z"] = ttk.Entry(frame, width=12)
+        self.entries["raw_surface_z"].insert(0, "")
+        self.entries["raw_surface_z"].grid(row=3, column=1, sticky=tk.W, pady=2, padx=(0, 12))
+
+        self.bsf_target_cutting_edge_var = tk.StringVar(value="—")
+        self.bsf_material_removal_var = tk.StringVar(value="—")
+        self.bsf_programmed_face_var = tk.StringVar(value="—")
+
+        summary = ttk.LabelFrame(frame, text="Werkstueck / Geometrie (read-only)", padding=6)
+        summary.grid(row=4, column=0, columnspan=6, sticky=tk.EW, pady=(6, 2))
+        ttk.Label(summary, text="Ziel-Senkflaeche (Schneide):").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=1)
+        ttk.Label(summary, textvariable=self.bsf_target_cutting_edge_var).grid(row=0, column=1, sticky=tk.W, pady=1)
+        ttk.Label(summary, text="Materialabtrag:").grid(row=1, column=0, sticky=tk.W, padx=(0, 8), pady=1)
+        ttk.Label(summary, textvariable=self.bsf_material_removal_var).grid(row=1, column=1, sticky=tk.W, pady=1)
+        ttk.Label(summary, text="Werkzeug-Vermessflaeche:").grid(row=2, column=0, sticky=tk.W, padx=(0, 8), pady=1)
+        ttk.Label(summary, textvariable=self.bsf_programmed_face_var).grid(row=2, column=1, sticky=tk.W, pady=1)
+        summary.columnconfigure(1, weight=1)
 
         self.reduce_approach_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             frame,
             text="Anschnitt-Vorschub reduzieren (50%)",
             variable=self.reduce_approach_var,
-        ).grid(row=3, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
+        ).grid(row=5, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
         ttk.Button(
             frame,
             text="Hilfsgrafik Senken",
             command=self.open_bsf_geometry_help,
-        ).grid(row=3, column=4, columnspan=2, sticky=tk.E, pady=(6, 0))
+        ).grid(row=5, column=4, columnspan=2, sticky=tk.E, pady=(6, 0))
+
+        self.refresh_bsf_geometry_summary()
 
     def create_bsf_machine_panel(self) -> None:
         frame = ttk.LabelFrame(self.params_host, text="HEULE BSF Maschinenoptionen", padding=8)
@@ -1002,6 +1023,7 @@ class BSFGeneratorGUI:
     def _install_nc_state_watchers(self) -> None:
         def _on_change(event=None):
             self.refresh_nc_output_status()
+            self.refresh_bsf_geometry_summary()
 
         for widget in list(self.entries.values()):
             widget.bind("<KeyRelease>", _on_change, add="+")
@@ -1024,7 +1046,7 @@ class BSFGeneratorGUI:
             self.bgf_end_mode_var,
             self.bsf_end_mode_var,
         ):
-            var.trace_add("write", lambda *_args: self.refresh_nc_output_status())
+            var.trace_add("write", lambda *_args: (self.refresh_nc_output_status(), self.refresh_bsf_geometry_summary()))
 
     def refresh_nc_output_status(self, event=None) -> None:
         label = getattr(self, "_nc_status_label", None)
@@ -1224,6 +1246,7 @@ class BSFGeneratorGUI:
             clearance_text=self.entries["clearance"].get() if "clearance" in self.entries else "",
             z0_label=self.z0_var.get(),
             reference_z_text=self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else "0",
+            raw_surface_z_text=self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else "",
             tool_designation=self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
         )
 
@@ -1878,6 +1901,11 @@ class BSFGeneratorGUI:
             raw_stock_top_z=_entry_float("raw_stock_top_z", "Rohteil-Oberkante Z"),
             z_reference=z_reference_from_label(self.z0_var.get()),
             reference_z=_entry_float("bsf_reference_z", "Z-Lage Bezugsebene"),
+            raw_surface_z=(
+                None
+                if not self.entries["raw_surface_z"].get().strip()
+                else _entry_float("raw_surface_z", "Rohflaeche / Ist-Z")
+            ),
             tool_profile_key=tool_profile.key,
             bund_thickness=_entry_float("bund_thickness", "Bund-Dicke"),
             sink_finish=_entry_float("sink_depth", "Senk-Fertigmaß"),
@@ -1919,6 +1947,7 @@ class BSFGeneratorGUI:
             "dwell": self.entries["dwell_time"].get(),
             "z0": self.z0_var.get(),
             "reference_z": self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else "0",
+            "raw_surface_z": self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else "",
             "tool_profile": self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
             "spindle": self.entries["spindle_speed"].get(),
             "feed": self.entries["feed_rate"].get(),
@@ -1947,6 +1976,7 @@ class BSFGeneratorGUI:
         self._set_entry_value("dwell_time", snapshot["dwell"])
         self.z0_var.set(snapshot["z0"])
         self._set_entry_value("bsf_reference_z", snapshot.get("reference_z", "0"))
+        self._set_entry_value("raw_surface_z", snapshot.get("raw_surface_z", ""))
         self.bsf_tool_profile_var.set(snapshot.get("tool_profile", TOOL_SELECTION_REQUIRED))
         self.on_bsf_tool_profile_change()
         self._set_entry_value("spindle_speed", snapshot["spindle"])
@@ -1987,6 +2017,7 @@ class BSFGeneratorGUI:
         self._set_entry_value("dwell_time", f"{doc.dwell_time:g}")
         self.z0_var.set(doc.z0_label)
         self._set_entry_value("bsf_reference_z", f"{doc.reference_z:g}")
+        self._set_entry_value("raw_surface_z", "" if doc.raw_surface_z is None else f"{doc.raw_surface_z:g}")
         if doc.tool_profile_key:
             profile = profile_by_key(doc.tool_profile_key)
             self.bsf_tool_profile_var.set(profile.designation if profile is not None else TOOL_SELECTION_REQUIRED)
@@ -2627,6 +2658,69 @@ class BSFGeneratorGUI:
             return None
         return value
 
+    def parse_bsf_raw_surface_z(self, *, show_error: bool = True) -> Optional[float]:
+        from bsf_workpiece_geometry import parse_optional_finite_mm
+
+        text = self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else ""
+        try:
+            return parse_optional_finite_mm(text)
+        except ValueError as exc:
+            if show_error:
+                messagebox.showerror("Rohflaeche / Ist-Z", str(exc))
+            return None
+
+    def refresh_bsf_geometry_summary(self) -> None:
+        if not hasattr(self, "bsf_target_cutting_edge_var"):
+            return
+        if not hasattr(self, "mode_var") or self.mode_var.get() != MODE_BSF:
+            self.bsf_target_cutting_edge_var.set("—")
+            self.bsf_material_removal_var.set("—")
+            self.bsf_programmed_face_var.set("—")
+            return
+        try:
+            from bsf_workpiece_geometry import build_workpiece_geometry, parse_optional_finite_mm
+        except Exception:
+            return
+
+        ref = self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else ""
+        sink = self.entries["sink_depth"].get() if "sink_depth" in self.entries else ""
+        raw = self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else ""
+        try:
+            ref_z = parse_optional_finite_mm(ref)
+            sink_finish = parse_optional_finite_mm(sink)
+            raw_z = parse_optional_finite_mm(raw)
+        except ValueError:
+            self.bsf_target_cutting_edge_var.set("—")
+            self.bsf_material_removal_var.set("—")
+            self.bsf_programmed_face_var.set("—")
+            return
+
+        profile = self.get_selected_bsf_tool_profile(show_error=False)
+        if ref_z is None or sink_finish is None or profile is None:
+            self.bsf_target_cutting_edge_var.set("—")
+            self.bsf_material_removal_var.set("—")
+            self.bsf_programmed_face_var.set("—")
+            return
+        try:
+            geom = build_workpiece_geometry(
+                reference_z=ref_z,
+                sink_finish=sink_finish,
+                raw_surface_z=raw_z,
+                measurement_face_to_cutting_edge_mm=profile.measurement_face_to_cutting_edge_mm,
+            )
+        except ValueError:
+            self.bsf_target_cutting_edge_var.set("—")
+            self.bsf_material_removal_var.set("—")
+            self.bsf_programmed_face_var.set("—")
+            return
+
+        self.bsf_target_cutting_edge_var.set(f"Z{geom.target_cutting_edge_z:+.3f}")
+        if geom.material_removal is None:
+            self.bsf_material_removal_var.set("—")
+        else:
+            self.bsf_material_removal_var.set(f"{geom.material_removal:.3f} mm")
+        self.bsf_programmed_face_var.set(f"Z{geom.programmed_measurement_face_z:+.3f}")
+
     def get_selected_bsf_tool_profile(self, *, show_error: bool = True):
         profile = profile_by_designation(
             self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else ""
@@ -2808,6 +2902,7 @@ class BSFGeneratorGUI:
                 self.entries["blade_thickness"].delete(0, tk.END)
             self.blade_measurement_var.set(MEASUREMENT_LABEL)
             self.refresh_nc_output_status()
+            self.refresh_bsf_geometry_summary()
             return
         self.bsf_measurement_face_to_edge_value.set(f"{profile.measurement_face_to_cutting_edge_mm:.3f} mm")
         if "blade_thickness" in self.entries:
@@ -2819,6 +2914,7 @@ class BSFGeneratorGUI:
         else:
             self.bsf_activation_speed_value.set(f"{profile.activation_speed_rpm:d} U/min")
         self.refresh_nc_output_status()
+        self.refresh_bsf_geometry_summary()
 
     # ------------------------------------------------------------------
     # Eingabe / Validierung
@@ -3309,6 +3405,26 @@ class BSFGeneratorGUI:
         z_values = self.calculate_bsf_z_values()
         if not z_values:
             return
+
+        raw_surface_z = self.parse_bsf_raw_surface_z(show_error=True)
+        raw_surface_text = self.entries["raw_surface_z"].get().strip() if "raw_surface_z" in self.entries else ""
+        if raw_surface_text and raw_surface_z is None:
+            return
+        if raw_surface_z is not None:
+            from bsf_workpiece_geometry import build_workpiece_geometry
+
+            try:
+                build_workpiece_geometry(
+                    reference_z=float(z_values["reference_z"]),
+                    sink_finish=float(self.entries["sink_depth"].get().replace(",", ".")),
+                    raw_surface_z=raw_surface_z,
+                    measurement_face_to_cutting_edge_mm=float(
+                        z_values["tool_profile"].measurement_face_to_cutting_edge_mm
+                    ),
+                )
+            except ValueError as exc:
+                messagebox.showerror("Rohflaeche / Ist-Z", str(exc))
+                return
 
         safe_err = validate_bsf_safe_z_against_reference(
             common["safe_z"],

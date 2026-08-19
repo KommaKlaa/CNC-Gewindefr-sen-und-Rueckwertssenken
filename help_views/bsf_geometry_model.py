@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from bsf_workpiece_geometry import build_workpiece_geometry, parse_optional_finite_mm
 from bsf_blade import apply_workpiece_reference_z, calculate_workpiece_bsf_z, parse_reference_z
 from heule_bsf_tools import (
     BSFToolProfile,
@@ -80,6 +81,10 @@ class BSFGeometryHelpSnapshot:
     z0_is_flange_bottom: bool
     z0_label: str
     reference_z: Optional[float]
+    raw_surface_z: Optional[float]
+    target_cutting_edge_z: Optional[float]
+    material_removal: Optional[float]
+    programmed_measurement_face_z_target: Optional[float]
     workpiece_z_sink_finish: Optional[float]
     workpiece_z_clearance: Optional[float]
     programmed_measurement_face_z_sink_finish: Optional[float]
@@ -95,6 +100,7 @@ def build_bsf_geometry_help_snapshot(
     clearance_text: str,
     z0_label: str,
     reference_z_text: str = "0",
+    raw_surface_z_text: str = "",
     tool_designation: str = "",
 ) -> BSFGeometryHelpSnapshot:
     """Baut den Hilfesnapshot aus GUI-Texten. Keine Dialoge, keine erfundenen Werte."""
@@ -110,6 +116,11 @@ def build_bsf_geometry_help_snapshot(
     if not ok_ref:
         reference_z = None
 
+    try:
+        raw_surface_z = parse_optional_finite_mm(raw_surface_z_text)
+    except ValueError:
+        raw_surface_z = None
+
     notes: List[str] = []
     if bund is None:
         notes.append("Bunddicke fehlt")
@@ -121,11 +132,16 @@ def build_bsf_geometry_help_snapshot(
         notes.append("HEULE Werkzeug fehlt")
     if reference_z is None:
         notes.append("Z-Lage Bezugsebene fehlt")
+    if (raw_surface_z_text or "").strip() and raw_surface_z is None:
+        notes.append("Rohflaeche / Ist-Z ungueltig")
 
     workpiece_sink = None
     workpiece_clear = None
     programmed_sink = None
     programmed_clear = None
+    target_cutting_edge_z = None
+    material_removal = None
+    programmed_target = None
 
     workpiece_ok = None not in (bund, sink, clearance)
     if workpiece_ok:
@@ -142,6 +158,18 @@ def build_bsf_geometry_help_snapshot(
         if tool_profile is not None:
             programmed_sink = programmed_measurement_face_z_for_cutting_edge(workpiece_sink, tool_profile)
             programmed_clear = programmed_measurement_face_z_for_cutting_edge(workpiece_clear, tool_profile)
+            try:
+                geom = build_workpiece_geometry(
+                    reference_z=reference_z if reference_z is not None else 0.0,
+                    sink_finish=sink if sink is not None else 0.0,
+                    raw_surface_z=raw_surface_z,
+                    measurement_face_to_cutting_edge_mm=tool_profile.measurement_face_to_cutting_edge_mm,
+                )
+                target_cutting_edge_z = geom.target_cutting_edge_z
+                material_removal = geom.material_removal
+                programmed_target = geom.programmed_measurement_face_z
+            except ValueError as exc:
+                notes.append(str(exc))
 
     nc_blocked = (not workpiece_ok) or tool_profile is None or reference_z is None
 
@@ -153,6 +181,10 @@ def build_bsf_geometry_help_snapshot(
         z0_is_flange_bottom=z0_is_bottom,
         z0_label=z0_shown,
         reference_z=reference_z,
+        raw_surface_z=raw_surface_z,
+        target_cutting_edge_z=target_cutting_edge_z,
+        material_removal=material_removal,
+        programmed_measurement_face_z_target=programmed_target,
         workpiece_z_sink_finish=workpiece_sink,
         workpiece_z_clearance=workpiece_clear,
         programmed_measurement_face_z_sink_finish=programmed_sink,
@@ -179,7 +211,7 @@ def format_help_info(snapshot: BSFGeometryHelpSnapshot) -> str:
         "AKTUELLE GEOMETRIE\n\n"
         "Werkstück\n"
         f"Bunddicke               {fmt_mm(snapshot.bund_thickness)}\n"
-        f"Senk-Fertigmaß          {fmt_mm(snapshot.sink_depth)}\n"
+        f"Fertigmaß ab Bezugsebene {fmt_mm(snapshot.sink_depth)}\n"
         f"Freifahrt               {fmt_mm(snapshot.clearance)}\n"
         f"Bezugsebene             {z0_short}\n"
         f"Z-Lage                  {fmt_axis_z(snapshot.reference_z)}\n\n"
@@ -190,6 +222,9 @@ def format_help_info(snapshot: BSFGeometryHelpSnapshot) -> str:
         f"Richtung                {MEASUREMENT_OFFSET_DIRECTION}\n"
         f"Aktivierungsdrehzahl    {speed}\n\n"
         "NC\n"
+        f"Ziel-Senkflaeche (Schneide) {fmt_axis_z(snapshot.target_cutting_edge_z)}\n"
+        f"Materialabtrag          {fmt_mm(snapshot.material_removal)}\n"
+        f"Vermesspunkt-Z Ziel     {fmt_axis_z(snapshot.programmed_measurement_face_z_target)}\n"
         f"Schneidenziel Finish    {fmt_axis_z(snapshot.workpiece_z_sink_finish)}\n"
         f"Schneidenziel Freifahrt {fmt_axis_z(snapshot.workpiece_z_clearance)}\n"
         f"Vermesspunkt-Z Finish   {fmt_axis_z(snapshot.programmed_measurement_face_z_sink_finish)}\n"

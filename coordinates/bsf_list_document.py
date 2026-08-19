@@ -1,6 +1,7 @@
 """Natives HEULE-BSF-Positionslistenformat (.bsf.json).
 
 Version 2 speichert das gewaehlte HEULE-Werkzeugprofil ueber seinen stabilen Key.
+Version 3 erweitert das workpiece-Modell um raw_surface_z (optional).
 Legacy-Version 1 wird weiterhin geladen, aber ohne Auto-Mapping auf ein Profil.
 """
 
@@ -19,7 +20,7 @@ from nc_programmer import ProgrammerError, normalize_programmer
 from .bsf_position import BSFCoordinatePosition
 
 FORMAT_NAME = "HEULE_BSF_POSITION_LIST"
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 MAX_BSF_POSITIONS = 10_000
 MAX_FILE_BYTES = 5_000_000
 
@@ -85,6 +86,7 @@ class BSFPositionListDocument:
     programmer: str = ""
     reference_z: float = 0.0
     raw_stock_top_z: float = 0.0
+    raw_surface_z: float | None = None
     end_mode: str = BSF_END_MODE_CHAIN
 
     @property
@@ -204,6 +206,7 @@ def document_to_dict(doc: BSFPositionListDocument) -> Dict[str, Any]:
             "bund_thickness": doc.bund_thickness,
             "sink_finish": doc.sink_finish,
             "clearance": doc.clearance,
+            "raw_surface_z": doc.raw_surface_z,
         },
         "tool": {
             "profile": doc.tool_profile_key,
@@ -271,6 +274,14 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
     bund_thickness = _require_finite(workpiece.get("bund_thickness"), "workpiece.bund_thickness")
     sink_finish = _require_finite(workpiece.get("sink_finish"), "workpiece.sink_finish")
     clearance = _require_finite(workpiece.get("clearance"), "workpiece.clearance")
+    if "raw_surface_z" in workpiece:
+        raw_surface_raw = workpiece.get("raw_surface_z")
+        if raw_surface_raw is None:
+            raw_surface_z = None
+        else:
+            raw_surface_z = _require_finite(raw_surface_raw, "workpiece.raw_surface_z")
+    else:
+        raw_surface_z = None
 
     tool_profile_key: str | None = None
     if version >= 2:
@@ -386,6 +397,7 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         end_safe_z=end_safe_z,
         positions=positions,
         programmer=programmer,
+        raw_surface_z=raw_surface_z,
         end_mode=end_mode,
     )
 
@@ -449,8 +461,11 @@ def build_bsf_document(
     programmer: str = "",
     reference_z: float = 0.0,
     raw_stock_top_z: float = 0.0,
+    raw_surface_z: float | None = None,
     end_mode: str = BSF_END_MODE_CHAIN,
 ) -> BSFPositionListDocument:
+    if raw_surface_z is not None and not math.isfinite(raw_surface_z):
+        raise BSFDocumentError("Rohflaeche / Ist-Z ist nicht endlich.")
     try:
         end_mode = validate_bsf_end_mode(end_mode)
     except ValueError:
@@ -521,5 +536,6 @@ def build_bsf_document(
         positions=tuple(positions),
         programmer=programmer_norm,
         reference_z=float(reference_z),
+        raw_surface_z=float(raw_surface_z) if raw_surface_z is not None else None,
         end_mode=end_mode,
     )

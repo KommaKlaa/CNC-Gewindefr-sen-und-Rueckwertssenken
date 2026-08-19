@@ -489,7 +489,7 @@ class TestBsfJsonReferenceZ(unittest.TestCase):
         self.assertEqual(payload["workpiece"]["reference_z"], 20.5)
         loaded = parse_document_dict(payload)
         self.assertEqual(loaded.reference_z, 20.5)
-        self.assertEqual(loaded.version, 2)
+        self.assertEqual(loaded.version, 3)
 
     def test_legacy_defaults_zero(self):
         payload = document_to_dict(self._doc())
