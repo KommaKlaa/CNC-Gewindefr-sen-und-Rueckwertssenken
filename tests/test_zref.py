@@ -37,10 +37,9 @@ TOOL_E = BSF_TOOL_PROFILES["BSF_E_1350_050_16_5_14"]
 
 _Z_RE = re.compile(r"Z([+-]\d+\.\d+)")
 _WORKPIECE_NEEDLES = (
-    "Durch den Bund tauchen",
+    "Freifahrposition zum Messer-Ausklappen",
     "Spindel einschalten",
-    "Senken mit 50 Prozent",
-    "Senken auf Fertigmass",
+    "Fertigposition Senkung",
 )
 _DATUM_NEEDLES = ("CYCL DEF 7", "TRANS DATUM", "DATUM SHIFT")
 
@@ -351,9 +350,9 @@ class TestBsfGuiZref(unittest.TestCase):
         code = self._generate("0")
         wp = _workpiece_z_map(code)
         # ref=0, sink=38 -> target=38, z_sink_finish = 38-8.55 = 29.45
-        self.assertAlmostEqual(wp["Senken mit 50 Prozent"], 29.45, places=3)
+        self.assertAlmostEqual(wp["Fertigposition Senkung"], 29.45, places=3)
         # dep_z = 0-5=-5, X = -5-20.25-2 = -27.25
-        self.assertAlmostEqual(wp["Durch den Bund tauchen"], -27.25, places=3)
+        self.assertAlmostEqual(wp["Freifahrposition zum Messer-Ausklappen"], -27.25, places=3)
         self.assertAlmostEqual(wp["Spindel einschalten"], -27.25, places=3)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", code)
         self.assertIn("L Z+200.0000 R0 FMAX M30", code)
@@ -367,14 +366,14 @@ class TestBsfGuiZref(unittest.TestCase):
         z0 = _workpiece_z_map(zero)
         z20 = _workpiece_z_map(plus)
         # D/sink verschiebt sich mit reference_z: ref+sink-Hs
-        self.assertAlmostEqual(z20["Senken mit 50 Prozent"], z0["Senken mit 50 Prozent"] + 20.0, places=3)
+        self.assertAlmostEqual(z20["Fertigposition Senkung"], z0["Fertigposition Senkung"] + 20.0, places=3)
         # X verschiebt sich ebenfalls, weil _generate dep_z = ref-5 setzt
-        self.assertAlmostEqual(z20["Durch den Bund tauchen"], z0["Durch den Bund tauchen"] + 20.0, places=3)
+        self.assertAlmostEqual(z20["Freifahrposition zum Messer-Ausklappen"], z0["Freifahrposition zum Messer-Ausklappen"] + 20.0, places=3)
         self.assertAlmostEqual(z20["Spindel einschalten"], z0["Spindel einschalten"] + 20.0, places=3)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", plus)
         self.assertIn("L Z+200.0000 R0 FMAX M30", plus)
         self.assertIn("L X+0.0000 Y+0.0000 Z+100.0000 R0 FMAX", plus)
-        self.assertAlmostEqual(z20["Senken mit 50 Prozent"], 49.45, places=3)
+        self.assertAlmostEqual(z20["Fertigposition Senkung"], 49.45, places=3)
 
     def test_minus20_shifts_workpiece_only(self):
         zero = self._generate("0")
@@ -382,11 +381,11 @@ class TestBsfGuiZref(unittest.TestCase):
         z0 = _workpiece_z_map(zero)
         zm = _workpiece_z_map(minus)
         # D/sink und X verschieben sich gleichmaessig mit reference_z
-        self.assertAlmostEqual(zm["Senken mit 50 Prozent"], z0["Senken mit 50 Prozent"] - 20.0, places=3)
-        self.assertAlmostEqual(zm["Durch den Bund tauchen"], z0["Durch den Bund tauchen"] - 20.0, places=3)
+        self.assertAlmostEqual(zm["Fertigposition Senkung"], z0["Fertigposition Senkung"] - 20.0, places=3)
+        self.assertAlmostEqual(zm["Freifahrposition zum Messer-Ausklappen"], z0["Freifahrposition zum Messer-Ausklappen"] - 20.0, places=3)
         self.assertAlmostEqual(zm["Spindel einschalten"], z0["Spindel einschalten"] - 20.0, places=3)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", minus)
-        self.assertAlmostEqual(zm["Senken mit 50 Prozent"], 9.45, places=3)
+        self.assertAlmostEqual(zm["Fertigposition Senkung"], 9.45, places=3)
 
     def test_xy_m_feed_unchanged(self):
         zero = self._generate("0")
@@ -412,8 +411,8 @@ class TestBsfGuiZref(unittest.TestCase):
         for ref in ("0", "20", "-20"):
             a = self._generate(ref, TOOL_C.designation)
             b = self._generate(ref, TOOL_E.designation)
-            za = _workpiece_z_map(a)["Senken mit 50 Prozent"]
-            zb = _workpiece_z_map(b)["Senken mit 50 Prozent"]
+            za = _workpiece_z_map(a)["Fertigposition Senkung"]
+            zb = _workpiece_z_map(b)["Fertigposition Senkung"]
             target = 38.0 + float(ref)
             self.assertAlmostEqual(cutting_edge_z_from_measurement_face_z(za, TOOL_C), target, places=3)
             self.assertAlmostEqual(cutting_edge_z_from_measurement_face_z(zb, TOOL_E), target, places=3)
@@ -471,9 +470,9 @@ class TestBsfGuiZref(unittest.TestCase):
             self.app.generate_bsf_code()
             codes.append(self.app.output_text.get("1.0", "end"))
         maps = [_workpiece_z_map(c) for c in codes]
-        self.assertAlmostEqual(maps[0]["Senken mit 50 Prozent"], 49.45, places=3)
-        self.assertAlmostEqual(maps[1]["Senken mit 50 Prozent"], 49.45, places=3)
-        self.assertAlmostEqual(maps[2]["Senken mit 50 Prozent"], 49.45, places=3)
+        self.assertAlmostEqual(maps[0]["Fertigposition Senkung"], 49.45, places=3)
+        self.assertAlmostEqual(maps[1]["Fertigposition Senkung"], 49.45, places=3)
+        self.assertAlmostEqual(maps[2]["Fertigposition Senkung"], 49.45, places=3)
 
 
 class TestBsfJsonReferenceZ(unittest.TestCase):

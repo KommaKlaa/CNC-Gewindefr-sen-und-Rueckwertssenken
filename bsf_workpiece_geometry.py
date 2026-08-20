@@ -186,13 +186,13 @@ def compute_heule_process_positions(
     if deployment_length_al_mm <= 0:
         raise ValueError("AL muss groesser 0 sein.")
     if x_safety_clearance_mm < 0:
-        raise ValueError("Ausklapp-Sicherheitsabstand X muss >= 0 sein.")
+        raise ValueError("Ausklapp-Sicherheitsabstand muss >= 0 sein.")
     if entry_clearance_mm < 0:
-        raise ValueError("Eintritts-Sicherheitsabstand A muss >= 0 sein.")
+        raise ValueError("Sicherheitsabstand vor Bohrung muss >= 0 sein.")
     if b_clearance_mm < 0:
-        raise ValueError("B-Sicherheitsabstand muss >= 0 sein.")
+        raise ValueError("Abstand vor Senkflaeche muss >= 0 sein.")
     if full_cut_overlap_mm < 0:
-        raise ValueError("Schneiden-Ueberdeckung C muss >= 0 sein.")
+        raise ValueError("Schnittueberdeckung muss >= 0 sein.")
     if not (target_surface_z > exit_edge_z):
         raise ValueError(
             "Ziel-Senkflaeche muss in +Z groesser als die Bohrungs-Austrittskante sein."

@@ -588,12 +588,12 @@ def _bsf_nc(app) -> Dict[str, str]:
         "has_begin": str("BEGIN PGM" in code_c),
         "has_m5": str("M5 ; Spindel aus" in code_c),
         "has_cycl9": str("CYCL DEF 9.1" in code_c),
-        "tool_c_activation": str("S2000 M3 ; Spindel einschalten an X" in code_c),
-        "tool_e_activation": str("S1500 M3 ; Spindel einschalten an X" in code_e),
+        "tool_c_activation": str("S2000 M3 ; Spindel einschalten an Freifahrposition" in code_c),
+        "tool_e_activation": str("S1500 M3 ; Spindel einschalten an Freifahrposition" in code_e),
         "process_speed_separate": str("TOOL CALL 8 Z S777" in code_c and "TOOL CALL 8 Z S777" in code_e),
-        "activation_at_x_0": str("L Z+37.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c),
-        "activation_at_x_plus20": str("L Z+57.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c_plus),
-        "activation_at_x_minus20": str("L Z+17.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c_minus),
+        "activation_at_x_0": str("L Z+37.7500 R0 FMAX S2000 M3 ; Spindel einschalten an Freifahrposition" in code_c),
+        "activation_at_x_plus20": str("L Z+57.7500 R0 FMAX S2000 M3 ; Spindel einschalten an Freifahrposition" in code_c_plus),
+        "activation_at_x_minus20": str("L Z+17.7500 R0 FMAX S2000 M3 ; Spindel einschalten an Freifahrposition" in code_c_minus),
     }
 
 
@@ -661,14 +661,14 @@ def _bsf_endmode(app) -> Dict[str, str]:
         "BSF_CHAIN_END_PGM_REACHABLE": "PASS" if chain_analysis["end_pgm_reachable"] else "FAIL",
         "BSF_STANDALONE_END_PGM": "PASS" if standalone_analysis["lbl999_i"] is not None else "FAIL",
         "BSF_HEULE_AL_PROFILE": "PASS" if ("AL (AUSKLAPPLAENGE): +20.250 MM" in chain_code) else "FAIL",
-        "BSF_HEULE_X_POSITION": "PASS" if ("X hinter Bohrung (AL+Sicherheit)" in chain_code) else "FAIL",
+        "BSF_HEULE_X_POSITION": "PASS" if ("Freifahrposition zum Messer-Ausklappen" in chain_code) else "FAIL",
         "BSF_HEULE_X_NO_HS_DOUBLE_OFFSET": "PASS"
-        if ("L Z+37.7500 R0 FMAX ; Durch den Bund tauchen / X hinter Bohrung (AL+Sicherheit)" in chain_code)
+        if ("L Z+37.7500 R0 FMAX ; Freifahrposition zum Messer-Ausklappen" in chain_code)
         else "FAIL",
         "BSF_HEULE_SEQUENCE_ORDER": "PASS"
         if (
-            chain_code.find("A vor Bohrung") < chain_code.find("X hinter Bohrung (AL+Sicherheit)")
-            < chain_code.find("Spindel einschalten an X")
+            chain_code.find("Sicherheitsposition vor Bohrung") < chain_code.find("Freifahrposition zum Messer-Ausklappen")
+            < chain_code.find("Spindel einschalten an Freifahrposition")
         )
         else "FAIL",
         "BSF_HEULE_RETRACT_BEFORE_ENTRY": "PASS"
@@ -678,19 +678,19 @@ def _bsf_endmode(app) -> Dict[str, str]:
         if ("Druck/IK aus - Messer zum Ausklappen freigegeben" in chain_code)
         else "FAIL",
         "BSF_HEULE_ACTIVATION_RPM_AT_X": "PASS"
-        if ("Spindel einschalten an X" in chain_code)
+        if ("Spindel einschalten an Freifahrposition" in chain_code)
         else "FAIL",
         "BSF_HEULE_RETURN_X_BEFORE_RETRACT": "PASS"
         if (
-            chain_code.find("Zurueck nach X") != -1
-            and chain_code.find("Zurueck nach X")
+            chain_code.find("Zurueck zur Freifahrposition") != -1
+            and chain_code.find("Zurueck zur Freifahrposition")
             < chain_code.rfind("Druck/IK ein - Messer eingefahren")
         )
         else "FAIL",
         "BSF_HEULE_REQUIRED_EDGES": "PASS"
         if (
             "deployment_edge_z" in chain_code or "Ausklappkante" in chain_code
-            or "X hinter Bohrung (AL+Sicherheit)" in chain_code
+            or "Freifahrposition zum Messer-Ausklappen" in chain_code
         )
         else "FAIL",
         "BSF_HEULE_NO_GEOMETRY_FALLBACK": "PASS"
@@ -700,10 +700,10 @@ def _bsf_endmode(app) -> Dict[str, str]:
         )
         else "FAIL",
         "BSF_HEULE_C_PARAMETER": "PASS"
-        if ("C Schneide greift" in chain_code)
+        if ("Schnittbeginn" in chain_code)
         else "FAIL",
         "BSF_HEULE_D_CANONICAL": "PASS"
-        if ("Senken auf Fertigmass" in chain_code or "Senken mit 50 Prozent Vorschub" in chain_code)
+        if ("Fertigposition Senkung" in chain_code or "Fertigposition Senkung (50 Prozent Vorschub)" in chain_code)
         else "FAIL",
         "BSF_HEULE_D_INVARIANT": "PASS"
         if chain_code  # NC wurde erzeugt → D-Invariante hat nicht blockiert
@@ -722,12 +722,12 @@ def _bsf_endmode(app) -> Dict[str, str]:
         if ("Bezugsebene" not in chain_code and "Z-Lage Bezugsebene" not in chain_code)
         else "FAIL",
         "BSF_TRANSLATION_INVARIANT": "PASS",
-        "BSF_A_DIRECT": "PASS" if ("A vor Bohrung" in chain_code) else "FAIL",
-        "BSF_X_DIRECT": "PASS" if ("X hinter Bohrung (AL+Sicherheit)" in chain_code) else "FAIL",
-        "BSF_B_DIRECT": "PASS" if ("B vor hinterer Kante" in chain_code) else "FAIL",
-        "BSF_C_DIRECT": "PASS" if ("C Schneide greift" in chain_code) else "FAIL",
+        "BSF_A_DIRECT": "PASS" if ("Sicherheitsposition vor Bohrung" in chain_code) else "FAIL",
+        "BSF_X_DIRECT": "PASS" if ("Freifahrposition zum Messer-Ausklappen" in chain_code) else "FAIL",
+        "BSF_B_DIRECT": "PASS" if ("Anfahrposition vor Senkflaeche" in chain_code) else "FAIL",
+        "BSF_C_DIRECT": "PASS" if ("Schnittbeginn" in chain_code) else "FAIL",
         "BSF_D_DIRECT": "PASS"
-        if ("Senken mit 50 Prozent Vorschub" in chain_code or "Senken auf Fertigmass" in chain_code)
+        if ("Fertigposition Senkung (50 Prozent Vorschub)" in chain_code or "Fertigposition Senkung" in chain_code)
         else "FAIL",
         "BSF_LEGACY_GEOMETRY_BLOCKED": "PASS",
         "BSF_V5_ROUNDTRIP": "PASS",

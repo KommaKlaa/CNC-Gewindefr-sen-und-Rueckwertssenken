@@ -263,12 +263,12 @@ class TestBsfHeuleSequence(unittest.TestCase):
             app.entries[key].insert(0, val)
         app.generate_bsf_code()
         code = app.output_text.get("1.0", "end")
-        self.assertIn("X hinter Bohrung (AL+Sicherheit)", code)
+        self.assertIn("Freifahrposition zum Messer-Ausklappen", code)
         self.assertNotIn("Z+61.0000", code)  # reference_z+1 Aktivierung entfernt
-        self.assertIn("Spindel einschalten an X", code)
+        self.assertIn("Spindel einschalten an Freifahrposition", code)
         self.assertIn("M5 ; Spindel aus", code)
         self.assertIn("Druck/IK ein - Messer eingefahren", code)
         self.assertIn("Druck/IK aus - Messer zum Ausklappen freigegeben", code)
-        self.assertIn("Zurueck nach X", code)
+        self.assertIn("Zurueck zur Freifahrposition", code)
         root.destroy()
 

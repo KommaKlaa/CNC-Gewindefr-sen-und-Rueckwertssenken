@@ -61,9 +61,9 @@ class TestSequenceRegression(unittest.TestCase):
         )
         seq = app.get_bsf_sequence(z_values, heule_pos, 200.0, 0.5, "M7", "M9", common)
         root.destroy()
-        self.assertEqual(seq[0], "L Z+1.0000 R0 FMAX ; A vor Bohrung")
+        self.assertEqual(seq[0], "L Z+1.0000 R0 FMAX ; Sicherheitsposition vor Bohrung")
         self.assertIn("CYCL DEF 9.0 VERWEILZEIT", seq)
-        self.assertIn("L Z-3.0000 R0 FMAX M3 ; Spindel einschalten an X", seq)
+        self.assertIn("L Z-3.0000 R0 FMAX M3 ; Spindel einschalten an Freifahrposition", seq)
 
 
 class TestGuiModesRegression(unittest.TestCase):

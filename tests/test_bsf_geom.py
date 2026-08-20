@@ -124,8 +124,8 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.entries["target_surface_z"].insert(0, "58")
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
-        self.assertIn("L Z+49.4500 R0 F30 ; Senken mit 50 Prozent Vorschub", code)
-        self.assertIn("L Z-7.2500 R0 FMAX S2000 M3 ; Spindel einschalten an X", code)
+        self.assertIn("L Z+49.4500 R0 F30 ; Fertigposition Senkung (50 Prozent Vorschub)", code)
+        self.assertIn("L Z-7.2500 R0 FMAX S2000 M3 ; Spindel einschalten an Freifahrposition", code)
         self.assertIn("TOOL CALL 8 Z S800", code)
 
     def test_reference_z_and_tool_e_generate_measurement_face_z(self):
@@ -135,8 +135,8 @@ class TestGuiBsfToolarch(unittest.TestCase):
         # z_sink_finish = 38 - 11.4 = 26.6
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
-        self.assertIn("L Z+26.6000 R0 F30 ; Senken mit 50 Prozent Vorschub", code)
-        self.assertIn("L Z-33.7500 R0 FMAX S1500 M3 ; Spindel einschalten an X", code)
+        self.assertIn("L Z+26.6000 R0 F30 ; Fertigposition Senkung (50 Prozent Vorschub)", code)
+        self.assertIn("L Z-33.7500 R0 FMAX S1500 M3 ; Spindel einschalten an Freifahrposition", code)
         self.assertIn("; HEULE AKTIVIERUNGSDREHZAHL: 1500 U/MIN", code)
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", code)
 
@@ -146,8 +146,8 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         motion = _motion_lines(code)
-        self.assertIn("L Z+29.4500 R0 F30 ; Senken mit 50 Prozent Vorschub", motion)
-        self.assertIn("L Z-27.2500 R0 FMAX S2000 M3 ; Spindel einschalten an X", motion)
+        self.assertIn("L Z+29.4500 R0 F30 ; Fertigposition Senkung (50 Prozent Vorschub)", motion)
+        self.assertIn("L Z-27.2500 R0 FMAX S2000 M3 ; Spindel einschalten an Freifahrposition", motion)
         comment_motion = [line for line in motion if not line.startswith(";")]
         self.assertTrue(all(re.match(r"^(L |TOOL CALL)", line) for line in comment_motion))
 
@@ -160,8 +160,8 @@ class TestGuiBsfToolarch(unittest.TestCase):
         self.app.on_bsf_tool_profile_change()
         self.app.generate_bsf_code()
         code_e = self.app.output_text.get("1.0", "end")
-        self.assertIn("S2000 M3 ; Spindel einschalten an X", code_c)
-        self.assertIn("S1500 M3 ; Spindel einschalten an X", code_e)
+        self.assertIn("S2000 M3 ; Spindel einschalten an Freifahrposition", code_c)
+        self.assertIn("S1500 M3 ; Spindel einschalten an Freifahrposition", code_e)
         self.assertNotIn("S1500", code_c)
         self.assertNotIn("S2000", code_e)
 

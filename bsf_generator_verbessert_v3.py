@@ -646,15 +646,15 @@ class BSFGeneratorGUI:
         self.entries["dwell_time"].insert(0, "1.5")
         self.entries["dwell_time"].grid(row=2, column=3, sticky=tk.W, pady=2, padx=(0, 12))
 
-        ttk.Label(frame, text="Ausklapp-Sicherheitsabstand X [mm]:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        ttk.Label(frame, text="Ausklapp-Sicherheitsabstand [mm]:").grid(row=3, column=0, sticky=tk.W, pady=2)
         self.entries["x_safety_clearance"] = ttk.Entry(frame, width=12)
         self.entries["x_safety_clearance"].insert(0, "2.000")
         self.entries["x_safety_clearance"].grid(row=3, column=1, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Eintritts-Sicherheitsabstand A [mm]:").grid(row=3, column=2, sticky=tk.W, pady=2)
+        ttk.Label(frame, text="Sicherheitsabstand vor Bohrung [mm]:").grid(row=3, column=2, sticky=tk.W, pady=2)
         self.entries["entry_clearance"] = ttk.Entry(frame, width=12)
         self.entries["entry_clearance"].insert(0, "1.000")
         self.entries["entry_clearance"].grid(row=3, column=3, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Schneiden-Ueberdeckung C [mm]:").grid(row=3, column=4, sticky=tk.W, pady=2)
+        ttk.Label(frame, text="Schnittueberdeckung [mm]:").grid(row=3, column=4, sticky=tk.W, pady=2)
         self.entries["full_cut_overlap_mm"] = ttk.Entry(frame, width=12)
         self.entries["full_cut_overlap_mm"].insert(0, "0.250")
         self.entries["full_cut_overlap_mm"].grid(row=3, column=5, sticky=tk.W, pady=2)
@@ -692,11 +692,11 @@ class BSFGeneratorGUI:
             (1, "Senktiefe (abgeleitet):", self.bsf_sink_depth_var),
             (2, "Materialabtrag:", self.bsf_material_removal_var),
             (3, "X/B/C Bezugsflaeche:", self.bsf_process_surface_var),
-            (4, "Position A:", self.bsf_position_a_var),
-            (5, "Position X:", self.bsf_position_x_var),
-            (6, "Position B:", self.bsf_position_b_var),
-            (7, "Position C:", self.bsf_position_c_var),
-            (8, "Position D / Werkzeug-Vermessflaeche:", self.bsf_position_d_var),
+            (4, "Sicherheitsposition vor Bohrung:", self.bsf_position_a_var),
+            (5, "Freifahrposition zum Messer-Ausklappen:", self.bsf_position_x_var),
+            (6, "Anfahrposition vor Senkflaeche:", self.bsf_position_b_var),
+            (7, "Schnittbeginn:", self.bsf_position_c_var),
+            (8, "Fertigposition Senkung:", self.bsf_position_d_var),
             (9, "Zielposition reale Schneide:", self.bsf_target_cutting_edge_var),
             (10, "AL:", self.bsf_al_var),
             (11, "Hs:", self.bsf_hs_var),
@@ -1940,9 +1940,9 @@ class BSFGeneratorGUI:
                 if not self.entries["target_surface_z"].get().strip()
                 else _entry_float("target_surface_z", "Ziel-Senkflaeche Z")
             ),
-            x_safety_clearance=_entry_float("x_safety_clearance", "Ausklapp-Sicherheitsabstand X"),
-            entry_clearance=_entry_float("entry_clearance", "Eintritts-Sicherheitsabstand A"),
-            full_cut_overlap_mm=_entry_float("full_cut_overlap_mm", "Schneiden-Ueberdeckung C"),
+            x_safety_clearance=_entry_float("x_safety_clearance", "Ausklapp-Sicherheitsabstand"),
+            entry_clearance=_entry_float("entry_clearance", "Sicherheitsabstand vor Bohrung"),
+            full_cut_overlap_mm=_entry_float("full_cut_overlap_mm", "Schnittueberdeckung"),
             tool_profile_key=tool_profile.key,
             spindle_speed=_entry_int("spindle_speed", "Spindeldrehzahl"),
             feed=_entry_float("feed_rate", "Vorschub"),
@@ -3656,7 +3656,7 @@ class BSFGeneratorGUI:
             messagebox.showerror(
                 "HEULE Prozessgeometrie – Eintrittskante fehlt",
                 "Fuer den HEULE-BSF-Prozess fehlt die Bohrungs-Eintrittskante Z.\n\n"
-                "Position A kann nicht sicher berechnet werden.\n\n"
+                "Sicherheitsposition vor Bohrung kann nicht sicher berechnet werden.\n\n"
                 "Bitte 'Bohrungs-Eintrittskante Z' eingeben.",
             )
             return
@@ -3664,7 +3664,7 @@ class BSFGeneratorGUI:
             messagebox.showerror(
                 "HEULE Prozessgeometrie – Austrittskante fehlt",
                 "Fuer den HEULE-BSF-Prozess fehlt die Bohrungs-Austrittskante / Senkseite Z.\n\n"
-                "Position X kann nicht sicher berechnet werden.\n\n"
+                "Freifahrposition zum Messer-Ausklappen kann nicht sicher berechnet werden.\n\n"
                 "Bitte 'Bohrungs-Austrittskante / Senkseite Z' eingeben.",
             )
             return
@@ -3672,7 +3672,7 @@ class BSFGeneratorGUI:
             messagebox.showerror(
                 "HEULE Prozessgeometrie – Ziel-Senkflaeche fehlt",
                 "Fuer den HEULE-BSF-Prozess fehlt die Ziel-Senkflaeche Z.\n\n"
-                "Position D kann nicht sicher berechnet werden.\n\n"
+                "Fertigposition Senkung kann nicht sicher berechnet werden.\n\n"
                 "Bitte 'Ziel-Senkflaeche Z' explizit eingeben. "
                 "Keine automatische Ableitung aus alten Bezugsebenen-Feldern.",
             )
@@ -3690,13 +3690,13 @@ class BSFGeneratorGUI:
         if full_cut_overlap_mm_val is None:
             full_cut_overlap_mm_val = 0.25
         if x_safety_clearance < 0:
-            messagebox.showerror("HEULE Position X", "Ausklapp-Sicherheitsabstand X muss >= 0 sein.")
+            messagebox.showerror("HEULE Freifahrposition", "Ausklapp-Sicherheitsabstand muss >= 0 sein.")
             return
         if entry_clearance < 0:
-            messagebox.showerror("HEULE Position A", "Eintritts-Sicherheitsabstand A muss >= 0 sein.")
+            messagebox.showerror("HEULE Sicherheitsposition", "Sicherheitsabstand vor Bohrung muss >= 0 sein.")
             return
         if full_cut_overlap_mm_val < 0:
-            messagebox.showerror("HEULE Schneiden-Ueberdeckung C", "Schneiden-Ueberdeckung C muss >= 0 sein.")
+            messagebox.showerror("HEULE Schnittueberdeckung", "Schnittueberdeckung muss >= 0 sein.")
             return
         if blade.deployment_length_al_mm is None:
             messagebox.showerror("HEULE AL", "MANUFACTURER_PROFILE_VALUE_MISSING = deployment_length_al_mm")
@@ -3762,7 +3762,7 @@ class BSFGeneratorGUI:
         code.append(f"; EINTRITTSKANTE: Z{entry_edge_z:+.4f}")
         code.append(f"; AUSTRITTSKANTE/SENKSEITE: Z{exit_edge_z:+.4f}")
         code.append(f"; ZIEL-SENKFLAECHE SCHNEIDE: Z{target_surface_z:+.4f}")
-        code.append(f"; POSITION X: Z{heule_pos.x_measurement_face_z:+.4f}")
+        code.append(f"; FREIFAHRPOSITION: Z{heule_pos.x_measurement_face_z:+.4f}")
         self.add_block_form(code, common)
         code.append(f"TOOL CALL {tool_num} Z S{spindle_speed}")
         code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX")
@@ -3856,38 +3856,38 @@ class BSFGeneratorGUI:
         activation_speed_rpm: Optional[int] = None,
     ) -> List[str]:
         lines: List[str] = []
-        lines.append(f"L {fmt_axis('Z', heule_pos.a_measurement_face_z)} R0 FMAX ; A vor Bohrung")
+        lines.append(f"L {fmt_axis('Z', heule_pos.a_measurement_face_z)} R0 FMAX ; Sicherheitsposition vor Bohrung")
         lines.append("M5 ; Spindel aus")
         lines.append(f"{m_act} ; Druck/IK ein - Messer eingefahren")
         lines.append("CYCL DEF 9.0 VERWEILZEIT")
         lines.append(f"CYCL DEF 9.1 V.ZEIT {dwell_time:.1f}")
         lines.append(
-            f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX ; Durch den Bund tauchen / X hinter Bohrung (AL+Sicherheit)"
+            f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX ; Freifahrposition zum Messer-Ausklappen"
         )
         lines.append(f"{m_deact} ; Druck/IK aus - Messer zum Ausklappen freigegeben")
         if activation_speed_rpm is not None:
             lines.append(
-                f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX S{int(activation_speed_rpm)} M3 ; Spindel einschalten an X"
+                f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX S{int(activation_speed_rpm)} M3 ; Spindel einschalten an Freifahrposition"
             )
         else:
-            lines.append(f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX M3 ; Spindel einschalten an X")
+            lines.append(f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX M3 ; Spindel einschalten an Freifahrposition")
         lines.append("CYCL DEF 9.0 VERWEILZEIT")
         lines.append(f"CYCL DEF 9.1 V.ZEIT {dwell_time:.1f}")
-        lines.append(f"L {fmt_axis('Z', heule_pos.b_measurement_face_z)} R0 F{feed_rate:.0f} ; B vor hinterer Kante")
+        lines.append(f"L {fmt_axis('Z', heule_pos.b_measurement_face_z)} R0 F{feed_rate:.0f} ; Anfahrposition vor Senkflaeche")
 
         if self.reduce_approach_var.get():
-            lines.append(f"L {fmt_axis('Z', heule_pos.c_measurement_face_z)} R0 F{feed_rate:.0f} ; C Schneide greift")
-            lines.append(f"L {fmt_axis('Z', heule_pos.d_measurement_face_z)} R0 F{feed_rate * 0.5:.0f} ; Senken mit 50 Prozent Vorschub")
+            lines.append(f"L {fmt_axis('Z', heule_pos.c_measurement_face_z)} R0 F{feed_rate:.0f} ; Schnittbeginn")
+            lines.append(f"L {fmt_axis('Z', heule_pos.d_measurement_face_z)} R0 F{feed_rate * 0.5:.0f} ; Fertigposition Senkung (50 Prozent Vorschub)")
         else:
-            lines.append(f"L {fmt_axis('Z', heule_pos.c_measurement_face_z)} R0 F{feed_rate:.0f} ; C Schneide greift")
-            lines.append(f"L {fmt_axis('Z', heule_pos.d_measurement_face_z)} R0 F{feed_rate:.0f} ; Senken auf Fertigmass")
+            lines.append(f"L {fmt_axis('Z', heule_pos.c_measurement_face_z)} R0 F{feed_rate:.0f} ; Schnittbeginn")
+            lines.append(f"L {fmt_axis('Z', heule_pos.d_measurement_face_z)} R0 F{feed_rate:.0f} ; Fertigposition Senkung")
 
-        lines.append(f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX ; Zurueck nach X")
+        lines.append(f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX ; Zurueck zur Freifahrposition")
         lines.append("M5 ; Spindel aus")
         lines.append(f"{m_act} ; Druck/IK ein - Messer eingefahren")
         lines.append("CYCL DEF 9.0 VERWEILZEIT")
         lines.append(f"CYCL DEF 9.1 V.ZEIT {dwell_time:.1f}")
-        lines.append(f"L {fmt_axis('Z', heule_pos.a_measurement_face_z)} R0 FMAX ; Zurueck nach A")
+        lines.append(f"L {fmt_axis('Z', heule_pos.a_measurement_face_z)} R0 FMAX ; Zurueck zur Sicherheitsposition")
         lines.append(f"L {fmt_axis('Z', common['safe_z'])} R0 FMAX ; Aus der Bohrung / Verfahrhoehe")
         return lines
 

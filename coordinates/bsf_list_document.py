@@ -366,7 +366,7 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
     if "full_cut_overlap_mm" in workpiece:
         full_cut_overlap_mm = _require_finite(workpiece.get("full_cut_overlap_mm"), "workpiece.full_cut_overlap_mm")
         if full_cut_overlap_mm < 0:
-            raise BSFDocumentError("Schneiden-Ueberdeckung C muss >= 0 sein.")
+            raise BSFDocumentError("Schnittueberdeckung muss >= 0 sein.")
     else:
         full_cut_overlap_mm = 0.25
 
@@ -568,11 +568,11 @@ def build_bsf_document(
     if target_surface_z is not None and not math.isfinite(target_surface_z):
         raise BSFDocumentError("Ziel-Senkflaeche Z ist nicht endlich.")
     if not math.isfinite(x_safety_clearance) or x_safety_clearance < 0:
-        raise BSFDocumentError("Ausklapp-Sicherheitsabstand X muss >= 0 sein.")
+        raise BSFDocumentError("Ausklapp-Sicherheitsabstand muss >= 0 sein.")
     if not math.isfinite(entry_clearance) or entry_clearance < 0:
-        raise BSFDocumentError("Eintritts-Sicherheitsabstand A muss >= 0 sein.")
+        raise BSFDocumentError("Sicherheitsabstand vor Bohrung muss >= 0 sein.")
     if not math.isfinite(full_cut_overlap_mm) or full_cut_overlap_mm < 0:
-        raise BSFDocumentError("Schneiden-Ueberdeckung C muss >= 0 sein.")
+        raise BSFDocumentError("Schnittueberdeckung muss >= 0 sein.")
     try:
         end_mode = validate_bsf_end_mode(end_mode)
     except ValueError:

@@ -23,7 +23,7 @@ Die fertige Senkflaeche entsteht an der Kante, die beim Vorschub **nach oben
 
 Verifiziert aus:
 - bestehender Z-Formel (Senkflaeche positiver als Freifahrt)
-- Sequenzkommentar „Durch den Bund tauchen“ / „Senken auf Fertigmass“
+- Sequenzkommentar „Freifahrposition zum Messer-Ausklappen“ / „Fertigposition Senkung“
 - vorhandener Prozessbeschreibung: Senkbewegung im Vorschub nach oben
 
 Vorzeichentabelle (Offset wird auf Werkstueck-Z der Werkzeugreferenz addiert)
