@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 Z0_CANONICAL = 0.0
 DEFAULT_X_SAFETY_CLEARANCE_MM = 2.0
@@ -20,6 +20,9 @@ DEFAULT_ENTRY_CLEARANCE_MM = 1.0
 DEFAULT_B_CLEARANCE_MM = 1.0
 DEFAULT_FULL_CUT_OVERLAP_MM = 0.25
 STOERKONTUR_E_NC_MODEL = "NOT_IMPLEMENTED"
+
+PROCESS_SURFACE_RAW = "RAW_SURFACE"
+PROCESS_SURFACE_EXIT = "EXIT_EDGE"
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,8 @@ class BSFHeuleProcessPositions:
     c_measurement_face_z: float
     d_measurement_face_z: float
     x_clear_distance: float
+    process_surface_z: float
+    process_surface_source: str  # RAW_SURFACE | EXIT_EDGE
 
 
 def parse_optional_finite_mm(text: str) -> Optional[float]:
@@ -115,6 +120,17 @@ def build_workpiece_geometry(
     )
 
 
+def resolve_process_surface_z(
+    *,
+    exit_edge_z: float,
+    raw_surface_z: Optional[float] = None,
+) -> Tuple[float, str]:
+    """Kanonische Prozesskontur fuer X/B/C: Rohflaeche wenn angegeben, sonst Austritt."""
+    if raw_surface_z is not None:
+        return float(raw_surface_z), PROCESS_SURFACE_RAW
+    return float(exit_edge_z), PROCESS_SURFACE_EXIT
+
+
 def compute_heule_process_positions(
     *,
     exit_edge_z: float,
@@ -126,6 +142,7 @@ def compute_heule_process_positions(
     entry_clearance_mm: float,
     b_clearance_mm: float = DEFAULT_B_CLEARANCE_MM,
     full_cut_overlap_mm: float = DEFAULT_FULL_CUT_OVERLAP_MM,
+    raw_surface_z: Optional[float] = None,
 ) -> BSFHeuleProcessPositions:
     """Berechnet A/X/B/C/D fuer die programmierte Vermessflaeche.
 
@@ -134,11 +151,21 @@ def compute_heule_process_positions(
     - Werkzeug kommt von +Z und faehrt in -Z durch die Bohrung.
     - Rueckwaertssenken erfolgt in +Z Richtung.
 
+    Prozesskontur (X/B/C):
+    process_surface_z = raw_surface_z wenn vorhanden, sonst exit_edge_z
+
+    Semantik:
+    - A: Anfahrt vor Eintritt (entry-basiert)
+    - X: Ausklappen hinter der realen Senkseiten-Kontur (AL+Sicherheit)
+    - B: FIRST_APPROACH_TO_ACTUAL_RAW_SURFACE
+    - C: INITIAL_CUT_RELATIVE_TO_ACTUAL_RAW_SURFACE
+    - D: Ziel-Senkflaeche (target-basiert, unveraendert)
+
     Formeln:
     A = entry_edge_z + entry_clearance
-    X = exit_edge_z - AL - x_safety
-    B = exit_edge_z - Hs - b_clearance
-    C = exit_edge_z - Hs + full_cut_overlap
+    X = process_surface_z - AL - x_safety
+    B = process_surface_z - Hs - b_clearance
+    C = process_surface_z - Hs + full_cut_overlap
     D = target_surface_z - Hs
     """
     for name, value in (
@@ -154,6 +181,8 @@ def compute_heule_process_positions(
     ):
         if not math.isfinite(value):
             raise ValueError(f"{name} muss endlich sein.")
+    if raw_surface_z is not None and not math.isfinite(raw_surface_z):
+        raise ValueError("raw_surface_z muss endlich sein.")
     if deployment_length_al_mm <= 0:
         raise ValueError("AL muss groesser 0 sein.")
     if x_safety_clearance_mm < 0:
@@ -170,19 +199,23 @@ def compute_heule_process_positions(
         )
 
     hs = measurement_face_to_cutting_edge_mm
+    process_surface_z, process_source = resolve_process_surface_z(
+        exit_edge_z=exit_edge_z,
+        raw_surface_z=raw_surface_z,
+    )
     required_clear = deployment_length_al_mm + x_safety_clearance_mm
 
-    x_face = exit_edge_z - deployment_length_al_mm - x_safety_clearance_mm
+    x_face = process_surface_z - deployment_length_al_mm - x_safety_clearance_mm
     a_face = entry_edge_z + entry_clearance_mm
-    b_face = exit_edge_z - hs - b_clearance_mm
-    c_face = exit_edge_z - hs + full_cut_overlap_mm
+    b_face = process_surface_z - hs - b_clearance_mm
+    c_face = process_surface_z - hs + full_cut_overlap_mm
     d_face = target_surface_z - hs
-    x_clear_distance = exit_edge_z - x_face
+    x_clear_distance = process_surface_z - x_face
 
     if x_clear_distance + 1e-12 < required_clear:
         raise ValueError(
             "Position X verletzt AL+Sicherheitsabstand "
-            f"(exit - X = {x_clear_distance:.3f} mm, erforderlich {required_clear:.3f} mm)."
+            f"(process_surface - X = {x_clear_distance:.3f} mm, erforderlich {required_clear:.3f} mm)."
         )
     if not (x_face < b_face < c_face < d_face):
         raise ValueError("Positionsinvariante verletzt: erwartet X < B < C < D.")
@@ -194,6 +227,8 @@ def compute_heule_process_positions(
         c_measurement_face_z=c_face,
         d_measurement_face_z=d_face,
         x_clear_distance=x_clear_distance,
+        process_surface_z=process_surface_z,
+        process_surface_source=process_source,
     )
 
 

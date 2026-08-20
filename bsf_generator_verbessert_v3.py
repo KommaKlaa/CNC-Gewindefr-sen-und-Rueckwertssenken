@@ -669,6 +669,7 @@ class BSFGeneratorGUI:
         self.bsf_sink_depth_var = tk.StringVar(value="—")
         self.bsf_target_cutting_edge_var = tk.StringVar(value="—")
         self.bsf_material_removal_var = tk.StringVar(value="—")
+        self.bsf_process_surface_var = tk.StringVar(value="—")
         self.bsf_programmed_face_var = tk.StringVar(value="—")
         self.bsf_position_a_var = tk.StringVar(value="—")
         self.bsf_position_x_var = tk.StringVar(value="—")
@@ -690,14 +691,15 @@ class BSFGeneratorGUI:
             (0, "Werkstuecknullpunkt:", self.bsf_z0_var),
             (1, "Senktiefe (abgeleitet):", self.bsf_sink_depth_var),
             (2, "Materialabtrag:", self.bsf_material_removal_var),
-            (3, "Position A:", self.bsf_position_a_var),
-            (4, "Position X:", self.bsf_position_x_var),
-            (5, "Position B:", self.bsf_position_b_var),
-            (6, "Position C:", self.bsf_position_c_var),
-            (7, "Position D / Werkzeug-Vermessflaeche:", self.bsf_position_d_var),
-            (8, "Zielposition reale Schneide:", self.bsf_target_cutting_edge_var),
-            (9, "AL:", self.bsf_al_var),
-            (10, "Hs:", self.bsf_hs_var),
+            (3, "X/B/C Bezugsflaeche:", self.bsf_process_surface_var),
+            (4, "Position A:", self.bsf_position_a_var),
+            (5, "Position X:", self.bsf_position_x_var),
+            (6, "Position B:", self.bsf_position_b_var),
+            (7, "Position C:", self.bsf_position_c_var),
+            (8, "Position D / Werkzeug-Vermessflaeche:", self.bsf_position_d_var),
+            (9, "Zielposition reale Schneide:", self.bsf_target_cutting_edge_var),
+            (10, "AL:", self.bsf_al_var),
+            (11, "Hs:", self.bsf_hs_var),
         ]
         for r, label, var in rows:
             ttk.Label(summary, text=label).grid(row=r, column=0, sticky=tk.W, padx=(0, 8), pady=1)
@@ -2728,6 +2730,8 @@ class BSFGeneratorGUI:
                 self.bsf_sink_depth_var.set("—")
             self.bsf_target_cutting_edge_var.set("—")
             self.bsf_material_removal_var.set("—")
+            if hasattr(self, "bsf_process_surface_var"):
+                self.bsf_process_surface_var.set("—")
             if hasattr(self, "bsf_programmed_face_var"):
                 self.bsf_programmed_face_var.set("—")
             for name in (
@@ -2824,6 +2828,7 @@ class BSFGeneratorGUI:
                     x_safety_clearance_mm=xsf_z,
                     entry_clearance_mm=ecf_z,
                     full_cut_overlap_mm=fco_val if fco_val is not None else 0.25,
+                    raw_surface_z=raw_z,
                 )
         except ValueError:
             _clear()
@@ -2843,6 +2848,18 @@ class BSFGeneratorGUI:
             self.bsf_material_removal_var.set("—")
         else:
             self.bsf_material_removal_var.set(f"{geom.material_removal:.3f} mm")
+        if hasattr(self, "bsf_process_surface_var"):
+            if pos is not None:
+                from bsf_workpiece_geometry import PROCESS_SURFACE_RAW
+
+                label = (
+                    "Rohflaeche / Ist-Z"
+                    if pos.process_surface_source == PROCESS_SURFACE_RAW
+                    else "Austrittskante"
+                )
+                self.bsf_process_surface_var.set(f"{label}   Z{pos.process_surface_z:+.3f}")
+            else:
+                self.bsf_process_surface_var.set("—")
         if hasattr(self, "bsf_programmed_face_var"):
             self.bsf_programmed_face_var.set(f"Z{geom.programmed_measurement_face_z:+.3f}")
         if hasattr(self, "bsf_hs_var"):
@@ -2916,6 +2933,9 @@ class BSFGeneratorGUI:
             messagebox.showwarning("Sicherheits-Z", "Geometrie oder Reserve unvollstaendig.")
             return
         try:
+            raw_z = parse_optional_finite_mm(
+                self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else ""
+            )
             pos = compute_heule_process_positions(
                 exit_edge_z=ext_z,
                 entry_edge_z=ent_z,
@@ -2925,6 +2945,7 @@ class BSFGeneratorGUI:
                 x_safety_clearance_mm=xsf_z,
                 entry_clearance_mm=ecf_z,
                 full_cut_overlap_mm=fco if fco is not None else 0.25,
+                raw_surface_z=raw_z,
             )
             required = required_bsf_safe_z(pos)
             new_safe, new_end = apply_minimum_plus_reserve(
@@ -3698,6 +3719,7 @@ class BSFGeneratorGUI:
                 x_safety_clearance_mm=x_safety_clearance,
                 entry_clearance_mm=entry_clearance,
                 full_cut_overlap_mm=full_cut_overlap_mm_val,
+                raw_surface_z=raw_surface_z,
             )
         except ValueError as exc:
             messagebox.showerror("HEULE Prozessgeometrie", str(exc))
