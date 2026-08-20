@@ -601,6 +601,7 @@ def _bsf_endmode(app) -> Dict[str, str]:
     """BSF-Endmodus-Smoke: Chain / Standalone / Stale / Count / Fallthrough."""
     from ui import MODE_BSF
     from ui.bsf_process_animation import PROCESS_STEPS
+    from ui.bsf_geometry_canvas import AXIS_ORIENTATION, PLUS_Z_DIRECTION
 
     def _setup_circle(end_mode: str, count: int = 6):
         app.mode_var.set(MODE_BSF)
@@ -747,6 +748,8 @@ def _bsf_endmode(app) -> Dict[str, str]:
         "BSF_HELP_SAFEZ_VISUAL": "PASS",
         "BSF_HELP_PROCESS_9_STEPS": "PASS" if len(PROCESS_STEPS) == 9 else "FAIL",
         "BSF_HELP_LOCAL_HEULE_ASSET": "PASS",
+        "BSF_HELP_VERTICAL_Z": "PASS" if AXIS_ORIENTATION == "VERTICAL" else "FAIL",
+        "BSF_HELP_PLUS_Z_UP": "PASS" if PLUS_Z_DIRECTION == "UP" else "FAIL",
     }
 
 

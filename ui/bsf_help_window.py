@@ -40,8 +40,8 @@ class BSFHelpWindow:
         self._provider = snapshot_provider
         self.win = tk.Toplevel(master)
         self.win.title("HEULE BSF – Senkgeometrie")
-        self.win.geometry("1280x860")
-        self.win.minsize(1080, 720)
+        self.win.geometry("1320x940")
+        self.win.minsize(1120, 780)
         apply_window_icon(self.win)
         self.snapshot: Optional[BSFGeometryHelpSnapshot] = None
         self._display_snapshot: Optional[BSFGeometryHelpSnapshot] = None
@@ -119,7 +119,7 @@ class BSFHelpWindow:
 
         left = ttk.Frame(body)
         right = ttk.Frame(body, width=340)
-        body.add(left, weight=3)
+        body.add(left, weight=4)
         body.add(right, weight=1)
 
         self.geom_canvas = tk.Canvas(left, background="#eef2f6")

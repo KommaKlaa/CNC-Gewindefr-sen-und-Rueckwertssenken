@@ -192,7 +192,7 @@ class TestHelpCanvasScale(unittest.TestCase):
 
         root = tk.Tk()
         root.withdraw()
-        canvas = tk.Canvas(root, width=800, height=400)
+        canvas = tk.Canvas(root, width=720, height=640)
         canvas.pack()
         root.update_idletasks()
         markers = draw_bsf_geometry(canvas, snap, blade_state=BLADE_CLOSED)
@@ -200,12 +200,11 @@ class TestHelpCanvasScale(unittest.TestCase):
         self.assertIn("A", markers)
         self.assertIn("X", markers)
         self.assertIn("SAFE", markers)
-        # +Z rechts: A (155) > X (49.75) und A > Z0
-        self.assertGreater(markers["A"], markers["X"])
-        self.assertGreater(markers["A"], markers["Z0"])
-        # Z0-Linie liegt im skalierten Bereich
-        self.assertGreater(markers["Z0"], 30)
-        self.assertLess(markers["Z0"], 780)
+        # +Z oben: kleinere Canvas-Y = groesseres Z  →  A liegt ueber X
+        self.assertLess(markers["A"], markers["X"])
+        self.assertLess(markers["A"], markers["Z0"])
+        self.assertGreater(markers["Z0"], 40)
+        self.assertLess(markers["Z0"], 700)
         root.destroy()
 
     def test_tool_states_and_steps(self):
