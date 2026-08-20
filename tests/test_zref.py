@@ -25,7 +25,6 @@ from coordinates import (
     import_bsf_csv_text,
 )
 from coordinates.bsf_list_document import build_bsf_document, document_to_dict, parse_document_dict
-from help_views.bsf_geometry_model import build_bsf_geometry_help_snapshot
 from heule_bsf_tools import (
     BSF_TOOL_PROFILES,
     cutting_edge_z_from_measurement_face_z,
@@ -605,28 +604,13 @@ class TestBgfHelpZref(unittest.TestCase):
         self.assertAlmostEqual(snap_m.drill_z, -42.810, places=3)
 
 
-class TestBsfHelpZref(unittest.TestCase):
-    def test_help_shows_translated_z(self):
-        snap0 = build_bsf_geometry_help_snapshot(
-            entry_text="20",
-            exit_text="-5",
-            target_text="38",
-            tool_designation=TOOL_C.designation,
-        )
-        snap20 = build_bsf_geometry_help_snapshot(
-            entry_text="40",
-            exit_text="15",
-            target_text="58",
-            tool_designation=TOOL_C.designation,
-        )
-        self.assertAlmostEqual(snap0.programmed_measurement_face_z_sink_finish, 29.45, places=3)
-        self.assertAlmostEqual(snap20.programmed_measurement_face_z_sink_finish, 49.45, places=3)
-        self.assertEqual(snap20.reference_z, 0.0)
-        from help_views.bsf_geometry_model import format_help_info
-
-        info = format_help_info(snap20)
-        self.assertIn("Z0", info)
-        self.assertIn("+58.0000", info)
+class TestBsfMeasurementFaceDomain(unittest.TestCase):
+    def test_programmed_measurement_face_translates_with_target(self):
+        d0 = programmed_measurement_face_z_for_cutting_edge(38.0, TOOL_C)
+        d20 = programmed_measurement_face_z_for_cutting_edge(58.0, TOOL_C)
+        self.assertAlmostEqual(d0, 29.45, places=3)
+        self.assertAlmostEqual(d20, 49.45, places=3)
+        self.assertAlmostEqual(cutting_edge_z_from_measurement_face_z(d20, TOOL_C), 58.0, places=3)
 
 
 class TestSafeZGateDomain(unittest.TestCase):

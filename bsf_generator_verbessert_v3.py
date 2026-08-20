@@ -346,7 +346,6 @@ class BSFGeneratorGUI:
         self.bsf_coord_rows: List[BSFCoordinatePosition] = []
         self._circle_entry_keys = ("diameter", "count", "start_angle", "center_x", "center_y")
         self._bgf_preview_window = None
-        self._bsf_help_window = None
         self._bgf_help_window = None
         self.nc_guard = NcOutputGuard()
         self._nc_status_label = None
@@ -740,11 +739,6 @@ class BSFGeneratorGUI:
             text="Anschnitt-Vorschub reduzieren (50%)",
             variable=self.reduce_approach_var,
         ).grid(row=7, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
-        ttk.Button(
-            frame,
-            text="Hilfsgrafik Senken",
-            command=self.open_bsf_geometry_help,
-        ).grid(row=7, column=4, columnspan=2, sticky=tk.E, pady=(6, 0))
 
         self.refresh_bsf_geometry_summary()
 
@@ -1152,26 +1146,6 @@ class BSFGeneratorGUI:
             snapshot_provider=self.build_preview_snapshot,
         )
 
-    def open_bsf_geometry_help(self) -> None:
-        """Oeffnet read-only HEULE-BSF-Senkgeometrie in einem Toplevel."""
-        from help_views.bsf_geometry_help import open_bsf_geometry_help_window
-
-        existing = getattr(self, "_bsf_help_window", None)
-        if existing is not None:
-            try:
-                if existing.win.winfo_exists():
-                    existing.refresh()
-                    existing.win.lift()
-                    existing.win.focus_force()
-                    return
-            except tk.TclError:
-                pass
-
-        self._bsf_help_window = open_bsf_geometry_help_window(
-            self.root,
-            snapshot_provider=self.build_bsf_geometry_help_snapshot,
-        )
-
     def open_bgf_geometry_help(self) -> None:
         """Oeffnet read-only CERATIZIT-BGF-Gewindegeometrie in einem Toplevel."""
         from help_views.bgf_geometry_help import open_bgf_geometry_help_window
@@ -1293,22 +1267,6 @@ class BSFGeneratorGUI:
             initial_index=initial_index,
             circle_diameter=circle_diameter,
             circle_count=circle_count,
-        )
-
-    def build_bsf_geometry_help_snapshot(self):
-        from help_views.bsf_geometry_model import build_bsf_geometry_help_snapshot
-
-        return build_bsf_geometry_help_snapshot(
-            entry_text=self.entries["entry_edge_z"].get() if "entry_edge_z" in self.entries else "",
-            exit_text=self.entries["exit_edge_z"].get() if "exit_edge_z" in self.entries else "",
-            target_text=self.entries["target_surface_z"].get() if "target_surface_z" in self.entries else "",
-            raw_surface_z_text=self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else "",
-            x_safety_text=self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else "2.000",
-            entry_clearance_text=self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else "1.000",
-            overlap_text=self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else "0.250",
-            tool_designation=self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
-            safe_z_text=self.entries["safe_z"].get() if "safe_z" in self.entries else "",
-            end_safe_z_text=self.entries["end_safe_z"].get() if "end_safe_z" in self.entries else "",
         )
 
     def build_preview_snapshot(self):
@@ -2196,13 +2154,6 @@ class BSFGeneratorGUI:
             try:
                 if preview.win.winfo_exists():
                     preview.refresh()
-            except tk.TclError:
-                pass
-        help_win = getattr(self, "_bsf_help_window", None)
-        if help_win is not None:
-            try:
-                if help_win.win.winfo_exists():
-                    help_win.refresh()
             except tk.TclError:
                 pass
         messagebox.showinfo(

@@ -414,23 +414,6 @@ class TestBgfHelpWindow(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertIn("BEGIN PGM", before)
 
-    def test_bsf_help_still_opens(self):
-        from help_views.bsf_geometry_help import BSFGeometryHelpWindow
-
-        self.app.mode_var.set(MODE_BSF)
-        self.app.on_mode_change(None)
-        for key, val in (("entry_edge_z", "20"), ("exit_edge_z", "-5"), ("target_surface_z", "38")):
-            self.app.entries[key].delete(0, "end")
-            self.app.entries[key].insert(0, val)
-        self.app.entries["blade_thickness"].delete(0, "end")
-        self.app.entries["blade_thickness"].insert(0, "3")
-        self.app.blade_measurement_var.set("Spindelseitige Schwertkante (Oberkante)")
-        win = BSFGeometryHelpWindow(self.root, snapshot_provider=self.app.build_bsf_geometry_help_snapshot)
-        win.win.update_idletasks()
-        self.assertEqual(win.win.title(), "HEULE BSF – Senkgeometrie")
-        self.assertTrue(win.canvas.find_withtag("flange"))
-        win.win.destroy()
-
 
 if __name__ == "__main__":
     unittest.main()

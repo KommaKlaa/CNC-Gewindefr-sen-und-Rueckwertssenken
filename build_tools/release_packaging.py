@@ -63,7 +63,6 @@ APP_SOURCE_RELATIVE = (
     "bgf_variable_depth.py",
     "assets/app_icon.ico",
     "assets/app_icon.png",
-    "assets/help/bsf_heule_geometry_reference.png",
 )
 APP_SOURCE_TREES = ("coordinates", "preview", "help_views", "ui")
 

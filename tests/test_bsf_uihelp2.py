@@ -1,13 +1,10 @@
-"""PHASE BSF.UIHELP.2 – Safe-Z Live-UX und HEULE-Hilfe-Redesign."""
+"""PHASE BSF.UIHELP.2 – Safe-Z Live-UX (grafische Hilfe entfernt in UIHELP.REMOVE.1)."""
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 import tkinter as tk
-import tkinter.messagebox as mb
 
 import bsf_generator_verbessert_v3 as gen
 from bsf_workpiece_geometry import (
@@ -15,18 +12,8 @@ from bsf_workpiece_geometry import (
     required_bsf_safe_z,
     validate_bsf_safe_z_direct,
 )
-from help_views.bsf_geometry_model import build_bsf_geometry_help_snapshot
 from heule_bsf_tools import BSF_TOOL_PROFILES
-from manufacturer_assets import (
-    HEULE_MISSING_ASSET_TEXT,
-    clear_heule_bsf_reference_image,
-    get_heule_bsf_reference_image_path,
-    image_scaler_mode,
-    set_heule_bsf_reference_image,
-)
 from ui import MODE_BSF
-from ui.bsf_geometry_canvas import BLADE_CLOSED, BLADE_DEPLOYED, build_z_scale, collect_z_values, draw_bsf_geometry
-from ui.bsf_process_animation import PROCESS_STEPS, machine_status_for_step
 from ui.bsf_safe_status import (
     STATUS_INCOMPLETE,
     STATUS_OK,
@@ -34,7 +21,6 @@ from ui.bsf_safe_status import (
     apply_minimum_plus_reserve,
     evaluate_bsf_safe_z_status,
 )
-from help_views.bsf_geometry_help import BSFGeometryHelpWindow
 
 TOOL_C = BSF_TOOL_PROFILES["BSF_C_1000_050_10_5_23"]
 HS = TOOL_C.measurement_face_to_cutting_edge_mm
@@ -166,113 +152,6 @@ class TestSafeZLiveGui(unittest.TestCase):
         self.assertIn("155", blob)
         self.assertIn("100", blob)
         root.destroy()
-
-
-class TestHelpCanvasScale(unittest.TestCase):
-    def test_real_z_transform_and_markers(self):
-        snap = build_bsf_geometry_help_snapshot(
-            entry_text="150",
-            exit_text="75",
-            target_text="80.5",
-            raw_surface_z_text="75",
-            x_safety_text="5",
-            entry_clearance_text="5",
-            overlap_text="0.25",
-            tool_designation=TOOL_C.designation,
-            safe_z_text="100",
-            end_safe_z_text="200",
-        )
-        self.assertAlmostEqual(snap.a_z, 155.0, places=3)
-        self.assertAlmostEqual(snap.x_z, 49.75, places=3)
-        self.assertAlmostEqual(snap.b_z, 65.45, places=3)
-        self.assertAlmostEqual(snap.c_z, 66.70, places=3)
-        self.assertAlmostEqual(snap.d_z, 71.95, places=3)
-        self.assertAlmostEqual(snap.required_safe_z, 155.0, places=3)
-        self.assertEqual(snap.safe_status, STATUS_TOO_LOW)
-
-        root = tk.Tk()
-        root.withdraw()
-        canvas = tk.Canvas(root, width=720, height=640)
-        canvas.pack()
-        root.update_idletasks()
-        markers = draw_bsf_geometry(canvas, snap, blade_state=BLADE_CLOSED)
-        self.assertIn("Z0", markers)
-        self.assertIn("A", markers)
-        self.assertIn("X", markers)
-        self.assertIn("SAFE", markers)
-        # +Z oben: kleinere Canvas-Y = groesseres Z  →  A liegt ueber X
-        self.assertLess(markers["A"], markers["X"])
-        self.assertLess(markers["A"], markers["Z0"])
-        self.assertGreater(markers["Z0"], 40)
-        self.assertLess(markers["Z0"], 700)
-        root.destroy()
-
-    def test_tool_states_and_steps(self):
-        snap = build_bsf_geometry_help_snapshot(
-            entry_text="150",
-            exit_text="75",
-            target_text="80.5",
-            tool_designation=TOOL_C.designation,
-            x_safety_text="5",
-            entry_clearance_text="5",
-            safe_z_text="160",
-            end_safe_z_text="200",
-        )
-        self.assertEqual(len(PROCESS_STEPS), 9)
-        s0 = machine_status_for_step(0, snap)
-        self.assertEqual(s0.blade_state, BLADE_CLOSED)
-        s3 = machine_status_for_step(3, snap)
-        self.assertEqual(s3.blade_state, BLADE_DEPLOYED)
-        s7 = machine_status_for_step(7, snap)
-        self.assertEqual(s7.blade_state, BLADE_CLOSED)
-
-    def test_help_incomplete_no_crash(self):
-        snap = build_bsf_geometry_help_snapshot(entry_text="", exit_text="", target_text="")
-        root = tk.Tk()
-        root.withdraw()
-        canvas = tk.Canvas(root, width=400, height=300)
-        canvas.pack()
-        root.update_idletasks()
-        draw_bsf_geometry(canvas, snap)
-        root.destroy()
-
-    def test_help_window_learning_modes(self):
-        root, app = _setup_user_case("160")
-        win = BSFGeometryHelpWindow(root, snapshot_provider=app.build_bsf_geometry_help_snapshot)
-        win.win.update_idletasks()
-        self.assertEqual(win._learning_mode, None)
-        win._use_z0_example(0)
-        self.assertEqual(win._learning_mode, 0)
-        win._use_z0_example(1)
-        win._use_z0_example(2)
-        win._use_current_geometry()
-        self.assertIsNone(win._learning_mode)
-        self.assertEqual(len(PROCESS_STEPS), 9)
-        win.win.destroy()
-        root.destroy()
-
-
-class TestHeuleLocalAsset(unittest.TestCase):
-    def test_missing_fallback_and_local_config(self):
-        self.assertEqual(image_scaler_mode(), "TK_ONLY")
-        with tempfile.TemporaryDirectory() as tmp:
-            settings = Path(tmp) / "settings.json"
-            png = Path(tmp) / "heule.png"
-            # Minimal valid GIF masquerading won't work for PhotoImage png; write tiny PNG
-            png.write_bytes(
-                bytes.fromhex(
-                    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-                    "0000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082"
-                )
-            )
-            with mock.patch.dict("os.environ", {"NC_GENERATOR_SETTINGS_PATH": str(settings)}):
-                clear_heule_bsf_reference_image()
-                # may still find bundled asset; chooser path must persist
-                stored = set_heule_bsf_reference_image(png, copy_to_appdata=False)
-                self.assertTrue(stored.is_file())
-                self.assertEqual(get_heule_bsf_reference_image_path(), stored)
-                clear_heule_bsf_reference_image()
-        self.assertIn("ausgewaehlt", HEULE_MISSING_ASSET_TEXT.lower())
 
 
 class TestNcRegressionUihelp(unittest.TestCase):

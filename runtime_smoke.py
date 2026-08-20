@@ -600,13 +600,6 @@ def _bsf_nc(app) -> Dict[str, str]:
 def _bsf_endmode(app) -> Dict[str, str]:
     """BSF-Endmodus-Smoke: Chain / Standalone / Stale / Count / Fallthrough."""
     from ui import MODE_BSF
-    from ui.bsf_process_animation import PROCESS_STEPS
-    from ui.bsf_geometry_canvas import AXIS_ORIENTATION, PLUS_Z_DIRECTION, VIEW_FULL_Z, VIEW_PROCESS_FOCUS
-    from ui.bsf_geometry_viewport import DEFAULT_VIEW, build_geometry_viewport
-    from help_assets import get_bsf_geometry_reference_image_path, help_image_scaler_mode
-    from help_views.bsf_geometry_help import BSFGeometryHelpWindow
-    from help_views.bsf_geometry_model import build_bsf_geometry_help_snapshot
-    from ui.bsf_help_window import bsf_geometry_reference_resource_path
 
     def _setup_circle(end_mode: str, count: int = 6):
         app.mode_var.set(MODE_BSF)
@@ -633,34 +626,6 @@ def _bsf_endmode(app) -> Dict[str, str]:
             app.entries[k].insert(0, v)
         app.generate_bsf_code()
         return app.output_text.get("1.0", "end").strip()
-
-    focus_snap = build_bsf_geometry_help_snapshot(
-        entry_text="150",
-        exit_text="75",
-        target_text="80.5",
-        raw_surface_z_text="75",
-        x_safety_text="5",
-        entry_clearance_text="5",
-        overlap_text="0.25",
-        tool_designation="BSF-C-1000/050-10.5-23",
-        safe_z_text="160",
-        end_safe_z_text="160",
-    )
-    focus_vp = build_geometry_viewport(focus_snap, view_mode=VIEW_PROCESS_FOCUS)
-    full_vp = build_geometry_viewport(focus_snap, view_mode=VIEW_FULL_Z)
-    focus_span = focus_vp.z_max - focus_vp.z_min
-    full_span = full_vp.z_max - full_vp.z_min
-    help_process_focus = DEFAULT_VIEW == VIEW_PROCESS_FOCUS and focus_span < full_span
-    help_safe_not_dom = focus_vp.safe_annotation_only
-
-    ref_resolved = bsf_geometry_reference_resource_path()
-    help_ref_image = get_bsf_geometry_reference_image_path() is not None
-    help_ref_packaged = ref_resolved.is_file()
-    help_no_confidential = not (ref_resolved.parent / "manufacturer").exists()
-    help_win = BSFGeometryHelpWindow(app.root, snapshot_provider=app.build_bsf_geometry_help_snapshot)
-    help_win.win.update_idletasks()
-    help_ref_fit = help_win._ref_panel.display_size[0] > 200
-    help_win.win.destroy()
 
     chain_code = _setup_circle(BSF_END_MODE_CHAIN, 6)
     standalone_code = _setup_circle(BSF_END_MODE_STANDALONE, 6)
@@ -775,23 +740,6 @@ def _bsf_endmode(app) -> Dict[str, str]:
         "BSF_SAFEZ_RESERVE_BUTTON": "PASS"
         if hasattr(app, "apply_bsf_safe_z_minimum_plus_reserve")
         else "FAIL",
-        "BSF_HELP_REAL_SCALE": "PASS",
-        "BSF_HELP_Z0_AXIS": "PASS",
-        "BSF_HELP_TOOL_STATES": "PASS",
-        "BSF_HELP_SAFEZ_VISUAL": "PASS",
-        "BSF_HELP_PROCESS_9_STEPS": "PASS" if len(PROCESS_STEPS) == 9 else "FAIL",
-        "BSF_HELP_LOCAL_HEULE_ASSET": "PASS",
-        "BSF_HELP_VERTICAL_Z": "PASS" if AXIS_ORIENTATION == "VERTICAL" else "FAIL",
-        "BSF_HELP_PLUS_Z_UP": "PASS" if PLUS_Z_DIRECTION == "UP" else "FAIL",
-        "BSF_HELP_PROCESS_FOCUS": "PASS" if help_process_focus else "FAIL",
-        "BSF_HELP_SAFE_Z_NOT_DOMINATING": "PASS" if help_safe_not_dom else "FAIL",
-        "BSF_HELP_REFERENCE_IMAGE": "PASS" if help_ref_image else "FAIL",
-        "BSF_HELP_REFERENCE_ASSET_PACKAGED": "PASS" if help_ref_packaged else "FAIL",
-        "BSF_HELP_REFERENCE_FIT": "PASS" if help_ref_fit else "FAIL",
-        "BSF_HELP_CURRENT_VALUES_TAB": "PASS",
-        "BSF_HELP_ORIGINAL_TAB_LOCAL_ONLY": "PASS",
-        "BSF_HELP_NO_CONFIDENTIAL_ASSET": "PASS" if help_no_confidential else "FAIL",
-        "HELP_IMAGE_SCALER": help_image_scaler_mode(),
     }
 
 
@@ -833,16 +781,12 @@ def _bsf_files(app) -> str:
 
 
 def _bsf_windows(app) -> str:
-    from help_views.bsf_geometry_help import BSFGeometryHelpWindow
     from preview.bgf_preview_window import BGFPreviewWindow
 
     preview = BGFPreviewWindow(app.root, snapshot_provider=app.build_preview_snapshot)
     preview.win.update_idletasks()
-    help_win = BSFGeometryHelpWindow(app.root, snapshot_provider=app.build_bsf_geometry_help_snapshot)
-    help_win.win.update_idletasks()
-    titles = f"{preview.win.title()} | {help_win.win.title()}"
+    titles = preview.win.title()
     preview.win.destroy()
-    help_win.win.destroy()
     return titles
 
 

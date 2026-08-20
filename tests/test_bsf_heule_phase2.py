@@ -6,11 +6,7 @@ import bsf_generator_verbessert_v3 as gen
 from bsf_workpiece_geometry import build_workpiece_geometry, parse_optional_finite_mm
 from coordinates import BSFCoordinatePosition, build_bsf_document
 from coordinates.bsf_list_document import FORMAT_VERSION, document_to_dict, parse_document_dict
-from help_views.bsf_geometry_help import BSFGeometryHelpWindow
-from help_views.bsf_geometry_model import build_bsf_geometry_help_snapshot
-from manufacturer_assets import HEULE_ATTRIBUTION_TEXT, HEULE_MISSING_ASSET_TEXT, get_heule_bsf_reference_image_path
 from ui import MODE_BSF
-from ui.bsf_process_animation import PROCESS_STEPS
 
 
 class TestBsfWorkpieceGeometry(unittest.TestCase):
@@ -188,71 +184,6 @@ class TestBsfDocumentV3(unittest.TestCase):
         }
         parsed = parse_document_dict(payload)
         self.assertIsNone(parsed.raw_surface_z)
-
-
-class TestBsfHelpWindowPhase2(unittest.TestCase):
-    def test_asset_missing_no_crash_and_attribution_available(self):
-        import tkinter as tk
-
-        root = tk.Tk()
-        root.withdraw()
-        app = gen.BSFGeneratorGUI(root)
-        app.mode_var.set(MODE_BSF)
-        app.on_mode_change(None)
-        win = BSFGeometryHelpWindow(root, snapshot_provider=app.build_bsf_geometry_help_snapshot)
-        win.win.update_idletasks()
-        self.assertIn("HEULE", HEULE_ATTRIBUTION_TEXT)
-        self.assertIsNotNone(win.nb)
-        if get_heule_bsf_reference_image_path() is None:
-            self.assertIn("ausgewaehlt", win.orig_msg.get().lower())
-            self.assertEqual(HEULE_MISSING_ASSET_TEXT, "Keine lokale HEULE-Herstellerabbildung ausgewaehlt.")
-        win.win.destroy()
-        root.destroy()
-
-    def test_three_tabs_exist(self):
-        import tkinter as tk
-
-        root = tk.Tk()
-        root.withdraw()
-        app = gen.BSFGeneratorGUI(root)
-        app.mode_var.set(MODE_BSF)
-        app.on_mode_change(None)
-        win = BSFGeometryHelpWindow(root, snapshot_provider=app.build_bsf_geometry_help_snapshot)
-        win.win.update_idletasks()
-        texts = [win.nb.tab(tab_id, "text") for tab_id in win.nb.tabs()]
-        self.assertIn("Geometriehilfe", texts)
-        self.assertIn("Aktuelle Werte", texts)
-        self.assertIn("Prozessablauf", texts)
-        self.assertEqual(len(texts), 4)
-        self.assertEqual(len(PROCESS_STEPS), 9)
-        win.win.destroy()
-        root.destroy()
-
-    def test_snapshot_contains_target_values(self):
-        snap = build_bsf_geometry_help_snapshot(
-            entry_text="101",
-            exit_text="75",
-            target_text="80.5",
-            raw_surface_z_text="75.0",
-            tool_designation="BSF-C-1000/050-10.5-23",
-        )
-        self.assertAlmostEqual(snap.target_cutting_edge_z, 80.5, places=3)
-        self.assertAlmostEqual(snap.material_removal, 5.5, places=3)
-
-    def test_animation_stops_on_close(self):
-        import tkinter as tk
-
-        root = tk.Tk()
-        root.withdraw()
-        app = gen.BSFGeneratorGUI(root)
-        app.mode_var.set(MODE_BSF)
-        app.on_mode_change(None)
-        win = BSFGeometryHelpWindow(root, snapshot_provider=app.build_bsf_geometry_help_snapshot)
-        win.win.update_idletasks()
-        win._animator.toggle_play()
-        self.assertTrue(win._animator.playing)
-        win._on_close()
-        root.destroy()
 
 
 class TestBsfRawSurfaceStale(unittest.TestCase):

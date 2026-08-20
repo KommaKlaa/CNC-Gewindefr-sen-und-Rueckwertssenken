@@ -23,7 +23,6 @@ from coordinates.bsf_list_document import (
 from coordinates import BSFCoordinatePosition
 from heule_bsf_tools import BSF_TOOL_PROFILES
 from ui import MODE_BSF
-from help_views.bsf_geometry_model import build_bsf_geometry_help_snapshot, format_help_info
 
 TOOL_C = BSF_TOOL_PROFILES["BSF_C_1000_050_10_5_23"]
 HS = TOOL_C.measurement_face_to_cutting_edge_mm
@@ -326,17 +325,17 @@ class TestJsonV5AndLegacy(unittest.TestCase):
         self.assertNotAlmostEqual(loaded.exit_edge_z or 0, 80.5)
 
 
-class TestHelpZ0(unittest.TestCase):
-    def test_help_three_examples(self):
-        snap = build_bsf_geometry_help_snapshot(
-            entry_text="0", exit_text="-30", target_text="-22",
-            tool_designation=TOOL_C.designation,
-        )
-        info = format_help_info(snap)
-        self.assertIn("Z0 obere Flaeche", info)
-        self.assertIn("Z0 hintere / innere Flaeche", info)
-        self.assertIn("Z0 untere Flaeche", info)
-        self.assertNotIn("Bezugsebene", info)
+class TestZ0ExamplesDomain(unittest.TestCase):
+    def test_three_examples_relative_geometry(self):
+        names = {ex["name"] for ex in (Z0_EXAMPLE_TOP, Z0_EXAMPLE_REAR, Z0_EXAMPLE_BOTTOM)}
+        self.assertIn("Z0 obere Flaeche", names)
+        self.assertIn("Z0 hintere / innere Flaeche", names)
+        self.assertIn("Z0 untere Flaeche", names)
+        for ex in (Z0_EXAMPLE_TOP, Z0_EXAMPLE_REAR, Z0_EXAMPLE_BOTTOM):
+            depth = float(ex["entry_edge_z"]) - float(ex["exit_edge_z"])
+            removal = float(ex["target_surface_z"]) - float(ex["exit_edge_z"])
+            self.assertAlmostEqual(depth, 30.0, places=3)
+            self.assertAlmostEqual(removal, 8.0, places=3)
 
 
 if __name__ == "__main__":
