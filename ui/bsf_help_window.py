@@ -1,4 +1,4 @@
-"""BSF-Hilfe: HEULE Original, Eigene Geometrie, Prozessablauf."""
+"""BSF-Hilfe: Geometriehilfe (Referenz-PNG), Aktuelle Werte, Prozessablauf, HEULE Original."""
 
 from __future__ import annotations
 
@@ -7,13 +7,21 @@ from pathlib import Path
 from tkinter import filedialog, ttk
 from typing import Callable, Optional
 
-from app_paths import apply_window_icon
+from app_paths import apply_window_icon, resource_path
 from bsf_workpiece_geometry import Z0_EXAMPLES
+from help_assets import (
+    BSF_GEOMETRY_REFERENCE_REL,
+    BSF_HELP_ATTRIBUTION,
+    BSF_HELP_EXAMPLE_NOTE,
+    BSF_HELP_MISSING_TEXT,
+    BSF_HELP_Z0_NOTE,
+    get_bsf_geometry_reference_image_path,
+    help_image_scaler_mode,
+)
 from help_views.bsf_geometry_model import (
     BSFGeometryHelpSnapshot,
     build_bsf_geometry_help_snapshot,
     fmt_axis_z,
-    fmt_mm,
     format_help_info,
 )
 from manufacturer_assets import (
@@ -25,14 +33,13 @@ from manufacturer_assets import (
     image_scaler_mode,
     set_heule_bsf_reference_image,
 )
-from ui.bsf_geometry_canvas import draw_bsf_geometry
+from ui.bsf_current_values_panel import BSFCurrentValuesPanel
 from ui.bsf_process_animation import (
     PROCESS_STEPS,
     BSFProcessAnimator,
     draw_process_frame,
-    machine_status_for_step,
 )
-from ui.bsf_safe_status import fmt_axis_z as fmt_safe_z
+from ui.bsf_reference_image import BSFReferenceImagePanel
 
 
 class BSFHelpWindow:
@@ -45,11 +52,12 @@ class BSFHelpWindow:
         apply_window_icon(self.win)
         self.snapshot: Optional[BSFGeometryHelpSnapshot] = None
         self._display_snapshot: Optional[BSFGeometryHelpSnapshot] = None
-        self._zoom = 1.0
+        self._orig_zoom = 1.0
         self._image_src = None
         self._img = None
         self._animator: Optional[BSFProcessAnimator] = None
-        self._learning_mode: Optional[int] = None  # None = aktuelle GUI-Geometrie
+        self._learning_mode: Optional[int] = None
+        self.geom_info = tk.StringVar(value="")
         self._build_ui()
         self.refresh()
         self.win.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -69,16 +77,80 @@ class BSFHelpWindow:
         nb.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
         self.nb = nb
 
-        self.tab_original = ttk.Frame(nb, padding=6)
-        self.tab_geom = ttk.Frame(nb, padding=6)
+        self.tab_reference = ttk.Frame(nb, padding=6)
+        self.tab_values = ttk.Frame(nb, padding=6)
         self.tab_process = ttk.Frame(nb, padding=6)
-        nb.add(self.tab_original, text="HEULE Original")
-        nb.add(self.tab_geom, text="Eigene Geometrie")
+        self.tab_original = ttk.Frame(nb, padding=6)
+        nb.add(self.tab_reference, text="Geometriehilfe")
+        nb.add(self.tab_values, text="Aktuelle Werte")
         nb.add(self.tab_process, text="Prozessablauf")
+        nb.add(self.tab_original, text="HEULE Original")
 
-        self._build_original_tab()
-        self._build_geometry_tab()
+        # Rueckwaertskompatibilitaet fuer Tests
+        self.tab_geom = self.tab_reference
+
+        self._build_reference_tab()
+        self._build_values_tab()
         self._build_process_tab()
+        self._build_original_tab()
+
+    def _build_reference_tab(self) -> None:
+        self._ref_panel = BSFReferenceImagePanel(
+            self.tab_reference,
+            on_missing=lambda: self._ref_panel.msg.set(BSF_HELP_MISSING_TEXT),
+        )
+        self._ref_panel.pack(fill=tk.BOTH, expand=True)
+        foot = ttk.Frame(self.tab_reference)
+        foot.pack(fill=tk.X, pady=(8, 0))
+        ttk.Label(foot, text=BSF_HELP_EXAMPLE_NOTE, wraplength=1180, justify=tk.LEFT).pack(anchor=tk.W)
+        ttk.Label(foot, text=BSF_HELP_Z0_NOTE, wraplength=1180, justify=tk.LEFT, foreground="#57606a").pack(
+            anchor=tk.W, pady=(6, 0)
+        )
+        ttk.Label(foot, text=BSF_HELP_ATTRIBUTION, wraplength=1180, foreground="#57606a").pack(anchor=tk.W, pady=(6, 0))
+
+    def _build_values_tab(self) -> None:
+        self._values_panel = BSFCurrentValuesPanel(
+            self.tab_values,
+            on_use_current=self._use_current_geometry,
+            on_use_example=self._use_z0_example,
+        )
+        self._values_panel.pack(fill=tk.BOTH, expand=True)
+
+    def _build_process_tab(self) -> None:
+        top = ttk.Frame(self.tab_process)
+        top.pack(fill=tk.X, pady=(0, 4))
+        self.badge_spindle = tk.StringVar(value="Spindel: —")
+        self.badge_pressure = tk.StringVar(value="Druck/IK: —")
+        self.badge_blade = tk.StringVar(value="Messer: —")
+        self.badge_pos = tk.StringVar(value="Position: —")
+        self.badge_z = tk.StringVar(value="Z: —")
+        for var in (self.badge_spindle, self.badge_pressure, self.badge_blade, self.badge_pos, self.badge_z):
+            ttk.Label(top, textvariable=var, padding=(6, 2)).pack(side=tk.LEFT, padx=4)
+
+        self.proc_canvas = tk.Canvas(self.tab_process, background="#eef2f6")
+        self.proc_canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas = self.proc_canvas
+        self.geom_canvas = self.proc_canvas
+
+        self.step_var = tk.StringVar(value=PROCESS_STEPS[0])
+        ttk.Label(self.tab_process, textvariable=self.step_var, font=("Segoe UI", 10, "bold")).pack(
+            anchor=tk.W, pady=(6, 2)
+        )
+        ttk.Label(
+            self.tab_process,
+            text="Darstellung schematisch – NC-Code vor Maschineneinsatz simulieren und pruefen.",
+            foreground="#57606a",
+        ).pack(anchor=tk.W, pady=(0, 8))
+
+        row = ttk.Frame(self.tab_process)
+        row.pack(fill=tk.X)
+        ttk.Button(row, text="|< Anfang", command=lambda: self._animator.first()).pack(side=tk.LEFT, padx=2)
+        ttk.Button(row, text="< Zurueck", command=lambda: self._animator.prev()).pack(side=tk.LEFT, padx=2)
+        ttk.Button(row, text="Play/Pause", command=lambda: self._animator.toggle_play()).pack(side=tk.LEFT, padx=2)
+        ttk.Button(row, text="Weiter >", command=lambda: self._animator.next()).pack(side=tk.LEFT, padx=2)
+        ttk.Button(row, text="Ende >|", command=lambda: self._animator.last()).pack(side=tk.LEFT, padx=2)
+        ttk.Button(row, text="Aktuelle Geometrie", command=self._use_current_geometry).pack(side=tk.LEFT, padx=12)
+        self._animator = BSFProcessAnimator(self.proc_canvas, self.step_var, on_redraw=self._draw_process_step)
 
     def _build_original_tab(self) -> None:
         tools = ttk.Frame(self.tab_original)
@@ -86,10 +158,14 @@ class BSFHelpWindow:
         ttk.Button(tools, text="HEULE-Original auswaehlen...", command=self._choose_heule_image).pack(
             side=tk.LEFT, padx=2
         )
-        ttk.Button(tools, text="Zoom +", command=lambda: self._set_zoom(self._zoom * 1.15)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(tools, text="Zoom -", command=lambda: self._set_zoom(self._zoom / 1.15)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(tools, text="100 %", command=lambda: self._set_zoom(1.0)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(tools, text="An Fenster", command=self._fit_image).pack(side=tk.LEFT, padx=2)
+        ttk.Button(tools, text="Zoom +", command=lambda: self._set_orig_zoom(self._orig_zoom * 1.15)).pack(
+            side=tk.LEFT, padx=2
+        )
+        ttk.Button(tools, text="Zoom -", command=lambda: self._set_orig_zoom(self._orig_zoom / 1.15)).pack(
+            side=tk.LEFT, padx=2
+        )
+        ttk.Button(tools, text="100 %", command=lambda: self._set_orig_zoom(1.0)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(tools, text="An Fenster", command=self._fit_original_image).pack(side=tk.LEFT, padx=2)
         ttk.Button(tools, text="Pfad entfernen", command=self._clear_heule_image).pack(side=tk.LEFT, padx=2)
         ttk.Label(tools, text=f"Scaler: {image_scaler_mode()}", foreground="#57606a").pack(side=tk.RIGHT)
 
@@ -113,84 +189,18 @@ class BSFHelpWindow:
             anchor=tk.W
         )
 
-    def _build_geometry_tab(self) -> None:
-        body = ttk.Panedwindow(self.tab_geom, orient=tk.HORIZONTAL)
-        body.pack(fill=tk.BOTH, expand=True)
-
-        left = ttk.Frame(body)
-        right = ttk.Frame(body, width=340)
-        body.add(left, weight=4)
-        body.add(right, weight=1)
-
-        self.geom_canvas = tk.Canvas(left, background="#eef2f6")
-        self.canvas = self.geom_canvas  # Rueckwaertskompatibel
-        self.geom_canvas.pack(fill=tk.BOTH, expand=True)
-        self.geom_canvas.bind("<Configure>", lambda _e: self._draw_geometry_tab())
-
-        learn = ttk.LabelFrame(right, text="Z0-Beispiele / Lernmodus", padding=6)
-        learn.pack(fill=tk.X, pady=(0, 6))
-        ttk.Button(learn, text="Aktuelle Geometrie", command=self._use_current_geometry).pack(fill=tk.X, pady=2)
-        for idx, ex in enumerate(Z0_EXAMPLES):
-            ttk.Button(
-                learn,
-                text=ex["name"],
-                command=lambda i=idx: self._use_z0_example(i),
-            ).pack(fill=tk.X, pady=2)
-        self._learn_mode_var = tk.StringVar(value="Aktuelle GUI-Werte")
-        ttk.Label(learn, textvariable=self._learn_mode_var, foreground="#57606a", wraplength=300).pack(anchor=tk.W)
-
-        self._info_text = tk.Text(right, width=42, height=28, wrap=tk.WORD, font=("Consolas", 9))
-        self._info_text.pack(fill=tk.BOTH, expand=True)
-        self._info_text.configure(state=tk.DISABLED)
-        self.geom_info = tk.StringVar(value="")  # Kompatibilitaet
-
-    def _build_process_tab(self) -> None:
-        top = ttk.Frame(self.tab_process)
-        top.pack(fill=tk.X, pady=(0, 4))
-        self.badge_spindle = tk.StringVar(value="Spindel: —")
-        self.badge_pressure = tk.StringVar(value="Druck/IK: —")
-        self.badge_blade = tk.StringVar(value="Messer: —")
-        self.badge_pos = tk.StringVar(value="Position: —")
-        self.badge_z = tk.StringVar(value="Z: —")
-        for var in (
-            self.badge_spindle,
-            self.badge_pressure,
-            self.badge_blade,
-            self.badge_pos,
-            self.badge_z,
-        ):
-            ttk.Label(top, textvariable=var, padding=(6, 2)).pack(side=tk.LEFT, padx=4)
-
-        self.proc_canvas = tk.Canvas(self.tab_process, background="#eef2f6")
-        self.proc_canvas.pack(fill=tk.BOTH, expand=True)
-        self.step_var = tk.StringVar(value=PROCESS_STEPS[0])
-        ttk.Label(self.tab_process, textvariable=self.step_var, font=("Segoe UI", 10, "bold")).pack(
-            anchor=tk.W, pady=(6, 2)
-        )
-        ttk.Label(
-            self.tab_process,
-            text="Darstellung schematisch – NC-Code vor Maschineneinsatz simulieren und pruefen.",
-            foreground="#57606a",
-        ).pack(anchor=tk.W, pady=(0, 8))
-
-        row = ttk.Frame(self.tab_process)
-        row.pack(fill=tk.X)
-        ttk.Button(row, text="|< Anfang", command=lambda: self._animator.first()).pack(side=tk.LEFT, padx=2)
-        ttk.Button(row, text="< Zurueck", command=lambda: self._animator.prev()).pack(side=tk.LEFT, padx=2)
-        ttk.Button(row, text="Play/Pause", command=lambda: self._animator.toggle_play()).pack(side=tk.LEFT, padx=2)
-        ttk.Button(row, text="Weiter >", command=lambda: self._animator.next()).pack(side=tk.LEFT, padx=2)
-        ttk.Button(row, text="Ende >|", command=lambda: self._animator.last()).pack(side=tk.LEFT, padx=2)
-        ttk.Button(row, text="Aktuelle Geometrie", command=self._use_current_geometry).pack(side=tk.LEFT, padx=12)
-        self._animator = BSFProcessAnimator(self.proc_canvas, self.step_var, on_redraw=self._draw_process_step)
-
     def refresh(self) -> None:
         self.snapshot = self._provider()
         self._resolve_display_snapshot()
+        self._load_reference_image()
         self._load_original_image()
-        self._draw_geometry_tab()
-        self._update_info_panel()
+        self._update_values_panel()
         if self._animator is not None:
             self._animator._update()
+
+    def _load_reference_image(self) -> None:
+        path = get_bsf_geometry_reference_image_path()
+        self._ref_panel.load_from_path(str(path) if path is not None else None)
 
     def _resolve_display_snapshot(self) -> None:
         base = self.snapshot
@@ -199,7 +209,7 @@ class BSFHelpWindow:
             return
         if self._learning_mode is None:
             self._display_snapshot = base
-            self._learn_mode_var.set("Aktuelle GUI-Werte")
+            self._values_panel.set_mode_label("Aktuelle GUI-Werte")
             return
         ex = Z0_EXAMPLES[self._learning_mode % len(Z0_EXAMPLES)]
         tool = base.tool_profile.designation if base.tool_profile is not None else ""
@@ -215,7 +225,7 @@ class BSFHelpWindow:
             safe_z_text="" if base.safe_z is None else str(base.safe_z),
             end_safe_z_text="" if base.end_safe_z is None else str(base.end_safe_z),
         )
-        self._learn_mode_var.set(f"Lernmodus: {ex['name']}")
+        self._values_panel.set_mode_label(f"Lernmodus: {ex['name']}")
 
     def _use_current_geometry(self) -> None:
         self._learning_mode = None
@@ -225,49 +235,15 @@ class BSFHelpWindow:
         self._learning_mode = index
         self.refresh()
 
-    def _update_info_panel(self) -> None:
+    def _update_values_panel(self) -> None:
         snap = self._display_snapshot
-        if snap is None:
-            return
-        tool = snap.tool_profile
-        lines = [
-            "WERKSTUECK-Z0",
-            f"Z0 = {fmt_axis_z(snap.z0)}",
-            "",
-            "WERKSTUECKFLAECHEN",
-            f"Eintritt     {fmt_axis_z(snap.entry_edge_z)}",
-            f"Austritt     {fmt_axis_z(snap.exit_edge_z)}",
-            f"Ziel         {fmt_axis_z(snap.target_surface_z)}",
-            f"Roh          {fmt_axis_z(snap.raw_surface_z)}",
-            f"Senktiefe    {fmt_mm(snap.sink_depth)}",
-            f"Abtrag       {fmt_mm(snap.material_removal)}",
-            "",
-            "HEULE WERKZEUG",
-            f"{tool.designation if tool else '—'}",
-            f"Hs {fmt_mm(tool.measurement_face_to_cutting_edge_mm if tool else None)}",
-            f"AL {fmt_mm(tool.deployment_length_al_mm if tool else None)}",
-            "",
-            "PROZESSPOSITIONEN",
-            f"A {fmt_axis_z(snap.a_z)}",
-            f"X {fmt_axis_z(snap.x_z)}",
-            f"B {fmt_axis_z(snap.b_z)}",
-            f"C {fmt_axis_z(snap.c_z)}",
-            f"D {fmt_axis_z(snap.d_z)}",
-            "",
-            "SICHERHEITSPRUEFUNG",
-            snap.safe_headline,
-            f"Minimum  {fmt_safe_z(snap.required_safe_z)}",
-            f"Safe-Z   {fmt_safe_z(snap.safe_z)}",
-            f"End-Safe {fmt_safe_z(snap.end_safe_z)}",
-        ]
-        if snap.notes:
-            lines.extend(["", "HINWEISE"] + [f"- {n}" for n in snap.notes])
-        text = "\n".join(lines)
-        self.geom_info.set(format_help_info(snap))
-        self._info_text.configure(state=tk.NORMAL)
-        self._info_text.delete("1.0", tk.END)
-        self._info_text.insert("1.0", text)
-        self._info_text.configure(state=tk.DISABLED)
+        self._values_panel.update_snapshot(snap)
+        if snap is not None:
+            self.geom_info.set(format_help_info(snap))
+
+    def _load_reference_image(self) -> None:
+        path = get_bsf_geometry_reference_image_path()
+        self._ref_panel.load_from_path(str(path) if path is not None else None)
 
     def _choose_heule_image(self) -> None:
         path = filedialog.askopenfilename(
@@ -315,13 +291,13 @@ class BSFHelpWindow:
             return
         self._image_src = src
         self.orig_msg.set(f"Originalabbildung geladen: {path.name}")
-        self._fit_image()
+        self._fit_original_image()
 
-    def _set_zoom(self, value: float) -> None:
-        self._zoom = min(4.0, max(0.25, value))
+    def _set_orig_zoom(self, value: float) -> None:
+        self._orig_zoom = min(4.0, max(0.25, value))
         self._render_original_image()
 
-    def _fit_image(self) -> None:
+    def _fit_original_image(self) -> None:
         if self._image_src is None:
             return
         cw = max(1, self.orig_canvas.winfo_width())
@@ -329,18 +305,15 @@ class BSFHelpWindow:
         iw = max(1, self._image_src.width())
         ih = max(1, self._image_src.height())
         scale = min(cw / iw, ch / ih)
-        self._zoom = min(4.0, max(0.25, scale))
+        self._orig_zoom = min(4.0, max(0.25, scale))
         self._render_original_image()
 
     def _render_original_image(self) -> None:
-        """TK_ONLY: ganzzahlige zoom/subsample-Schritte, kein Pillow."""
         self.orig_canvas.delete("all")
         if self._image_src is None:
             return
-        # Feinere Stufung ueber kombinierte zoom/subsample
-        zoom = self._zoom
+        zoom = self._orig_zoom
         if zoom >= 1.0:
-            # zoom(n)/subsample(m) ~ n/m
             best = (1, 1, abs(1.0 - zoom))
             for n in range(1, 9):
                 for m in range(1, 9):
@@ -364,12 +337,6 @@ class BSFHelpWindow:
         self.orig_canvas.create_image(0, 0, anchor="nw", image=img)
         self.orig_canvas.configure(scrollregion=(0, 0, img.width(), img.height()))
 
-    def _draw_geometry_tab(self) -> None:
-        snap = self._display_snapshot
-        if snap is None:
-            return
-        draw_bsf_geometry(self.geom_canvas, snap)
-
     def _draw_process_step(self, step_index: int) -> None:
         snap = self._display_snapshot
         if snap is None:
@@ -383,7 +350,18 @@ class BSFHelpWindow:
 
 
 def tool_detail_canvas_layout(canvas_height: float) -> tuple[float, float]:
-    # Rueckwaertskompatibel fuer vorhandene Tests.
     y_cut = 55.0
     y_meas = canvas_height - 55.0
     return y_cut, y_meas
+
+
+def bsf_geometry_reference_resource_path() -> Path:
+    return resource_path(BSF_GEOMETRY_REFERENCE_REL)
+
+
+__all__ = [
+    "BSFHelpWindow",
+    "bsf_geometry_reference_resource_path",
+    "help_image_scaler_mode",
+    "tool_detail_canvas_layout",
+]

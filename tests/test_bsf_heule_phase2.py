@@ -220,9 +220,10 @@ class TestBsfHelpWindowPhase2(unittest.TestCase):
         win = BSFGeometryHelpWindow(root, snapshot_provider=app.build_bsf_geometry_help_snapshot)
         win.win.update_idletasks()
         texts = [win.nb.tab(tab_id, "text") for tab_id in win.nb.tabs()]
-        self.assertIn("HEULE Original", texts)
-        self.assertIn("Eigene Geometrie", texts)
+        self.assertIn("Geometriehilfe", texts)
+        self.assertIn("Aktuelle Werte", texts)
         self.assertIn("Prozessablauf", texts)
+        self.assertEqual(len(texts), 4)
         self.assertEqual(len(PROCESS_STEPS), 9)
         win.win.destroy()
         root.destroy()

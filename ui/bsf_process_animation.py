@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional
 
 from help_views.bsf_geometry_model import BSFGeometryHelpSnapshot
-from ui.bsf_geometry_canvas import BLADE_CLOSED, BLADE_DEPLOYED, draw_bsf_geometry
+from ui.bsf_geometry_canvas import BLADE_CLOSED, BLADE_DEPLOYED, VIEW_PROCESS_FOCUS, draw_bsf_geometry
 
 
 PROCESS_STEPS: List[str] = [
@@ -142,5 +142,6 @@ def draw_process_frame(
         blade_state=status.blade_state,
         show_tool=True,
         title=f"Schritt {PROCESS_STEPS[step_index]}",
+        view_mode=VIEW_PROCESS_FOCUS,
     )
     return status
