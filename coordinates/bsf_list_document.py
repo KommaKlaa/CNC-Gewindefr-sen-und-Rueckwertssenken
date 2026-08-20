@@ -4,6 +4,7 @@ Version 2 speichert das gewaehlte HEULE-Werkzeugprofil ueber seinen stabilen Key
 Version 3 erweitert das workpiece-Modell um raw_surface_z (optional).
 Version 4 erweitert das workpiece-Modell um deployment/entry Geometrie fuer HEULE-X/A.
 Version 5 speichert direkte Z0-Koordinaten: entry_edge_z, exit_edge_z, target_surface_z.
+Optional im workpiece-Block (ohne Versionserhoehung): b_clearance (Default 1.000).
 Legacy-Version 1–4 werden geladen, aber NICHT automatisch in V5-NC umgewandelt.
 """
 
@@ -96,6 +97,7 @@ class BSFPositionListDocument:
     entry_edge_z: float | None = None
     entry_clearance: float = 1.0
     full_cut_overlap_mm: float = 0.25
+    b_clearance: float = 1.0
     end_mode: str = BSF_END_MODE_CHAIN
 
     @property
@@ -233,6 +235,7 @@ def document_to_dict(doc: BSFPositionListDocument) -> Dict[str, Any]:
             "x_safety_clearance": doc.x_safety_clearance,
             "entry_clearance": doc.entry_clearance,
             "full_cut_overlap_mm": doc.full_cut_overlap_mm,
+            "b_clearance": doc.b_clearance,
         },
         "tool": {
             "profile": doc.tool_profile_key,
@@ -369,6 +372,12 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
             raise BSFDocumentError("Schnittueberdeckung muss >= 0 sein.")
     else:
         full_cut_overlap_mm = 0.25
+    if "b_clearance" in workpiece:
+        b_clearance = _require_finite(workpiece.get("b_clearance"), "workpiece.b_clearance")
+        if b_clearance < 0:
+            raise BSFDocumentError("Abstand vor Senkflaeche muss >= 0 sein.")
+    else:
+        b_clearance = 1.0
 
     tool_profile_key: str | None = None
     if version >= 2:
@@ -492,6 +501,7 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         entry_edge_z=entry_edge_z,
         entry_clearance=entry_clearance,
         full_cut_overlap_mm=full_cut_overlap_mm,
+        b_clearance=b_clearance,
         end_mode=end_mode,
     )
 
@@ -557,6 +567,7 @@ def build_bsf_document(
     x_safety_clearance: float = 2.0,
     entry_clearance: float = 1.0,
     full_cut_overlap_mm: float = 0.25,
+    b_clearance: float = 1.0,
     end_mode: str = BSF_END_MODE_CHAIN,
 ) -> BSFPositionListDocument:
     if raw_surface_z is not None and not math.isfinite(raw_surface_z):
@@ -573,6 +584,8 @@ def build_bsf_document(
         raise BSFDocumentError("Sicherheitsabstand vor Bohrung muss >= 0 sein.")
     if not math.isfinite(full_cut_overlap_mm) or full_cut_overlap_mm < 0:
         raise BSFDocumentError("Schnittueberdeckung muss >= 0 sein.")
+    if not math.isfinite(b_clearance) or b_clearance < 0:
+        raise BSFDocumentError("Abstand vor Senkflaeche muss >= 0 sein.")
     try:
         end_mode = validate_bsf_end_mode(end_mode)
     except ValueError:
@@ -645,5 +658,6 @@ def build_bsf_document(
         entry_edge_z=float(entry_edge_z) if entry_edge_z is not None else None,
         entry_clearance=float(entry_clearance),
         full_cut_overlap_mm=float(full_cut_overlap_mm),
+        b_clearance=float(b_clearance),
         end_mode=end_mode,
     )

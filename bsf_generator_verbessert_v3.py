@@ -682,28 +682,40 @@ class BSFGeneratorGUI:
         ttk.Label(left, text="Prozessparameter", font=("Segoe UI", 9, "bold")).grid(
             row=7, column=0, columnspan=4, sticky=tk.W, pady=(10, 2)
         )
-        ttk.Label(left, text="Schnittueberdeckung [mm]:").grid(row=8, column=0, sticky=tk.W, pady=3)
-        self.entries["full_cut_overlap_mm"] = ttk.Entry(left, width=14)
-        self.entries["full_cut_overlap_mm"].insert(0, "0.250")
-        self.entries["full_cut_overlap_mm"].grid(row=8, column=1, sticky=tk.EW, pady=3, padx=(4, 12))
-        ttk.Label(left, text="Wartezeit Druckaufbau (s):").grid(row=8, column=2, sticky=tk.W, pady=3)
+        ttk.Label(left, text="Wartezeit Druckaufbau (s):").grid(row=8, column=0, sticky=tk.W, pady=3)
         self.entries["dwell_time"] = ttk.Entry(left, width=14)
         self.entries["dwell_time"].insert(0, "1.5")
-        self.entries["dwell_time"].grid(row=8, column=3, sticky=tk.EW, pady=3, padx=(4, 0))
+        self.entries["dwell_time"].grid(row=8, column=1, sticky=tk.EW, pady=3, padx=(4, 12))
+        ttk.Label(left, text="Abstand vor Senkflaeche [mm]:").grid(row=8, column=2, sticky=tk.W, pady=3)
+        self.entries["b_clearance"] = ttk.Entry(left, width=14)
+        self.entries["b_clearance"].insert(0, "1.000")
+        self.entries["b_clearance"].grid(row=8, column=3, sticky=tk.EW, pady=3, padx=(4, 0))
+
+        ttk.Label(left, text="Schnittueberdeckung [mm]:").grid(row=9, column=0, sticky=tk.W, pady=3)
+        self.entries["full_cut_overlap_mm"] = ttk.Entry(left, width=14)
+        self.entries["full_cut_overlap_mm"].insert(0, "0.250")
+        self.entries["full_cut_overlap_mm"].grid(row=9, column=1, sticky=tk.EW, pady=3, padx=(4, 12))
+        ttk.Label(
+            left,
+            text="Das Werkzeug faehrt mit ausgeklapptem Messer bis auf diesen Abstand vor die Senkflaeche.",
+            font=("Segoe UI", 8),
+            foreground="#57606a",
+            wraplength=260,
+        ).grid(row=9, column=2, columnspan=2, sticky=tk.W, pady=3, padx=(4, 0))
 
         ttk.Label(
             left,
-            text="HEULE-Programmierbeispiel: X-Sicherheit 2,0 mm / A-Sicherheit 1,0 mm / C-Ueberdeckung 0,25 mm – vor Einsatz pruefen.",
+            text="HEULE-Programmierbeispiel: X-Sicherheit 2,0 mm / A-Sicherheit 1,0 mm / Abstand vor Senkflaeche 1,0 mm / C-Ueberdeckung 0,25 mm – vor Einsatz pruefen.",
             font=("Segoe UI", 8),
             wraplength=520,
-        ).grid(row=9, column=0, columnspan=4, sticky=tk.EW, pady=(6, 2))
+        ).grid(row=10, column=0, columnspan=4, sticky=tk.EW, pady=(6, 2))
 
         self.reduce_approach_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             left,
             text="Anschnitt-Vorschub reduzieren (50%)",
             variable=self.reduce_approach_var,
-        ).grid(row=10, column=0, columnspan=4, sticky=tk.W, pady=(8, 0))
+        ).grid(row=11, column=0, columnspan=4, sticky=tk.W, pady=(8, 0))
 
         self.bsf_z0_var = tk.StringVar(value="Z0.000")
         self.bsf_sink_depth_var = tk.StringVar(value="—")
@@ -1396,8 +1408,9 @@ class BSFGeneratorGUI:
             xsf_z = parse_optional_finite_mm(_entry_text("x_safety_clearance"))
             ecf_z = parse_optional_finite_mm(_entry_text("entry_clearance"))
             fco_val = parse_optional_finite_mm(_entry_text("full_cut_overlap_mm"))
+            bcl_val = parse_optional_finite_mm(_entry_text("b_clearance"))
         except ValueError:
-            ent_z = ext_z = tgt_z = raw_z = xsf_z = ecf_z = fco_val = None
+            ent_z = ext_z = tgt_z = raw_z = xsf_z = ecf_z = fco_val = bcl_val = None
             missing.append("ungueltige Zahlenwerte")
 
         if ent_z is None:
@@ -1412,6 +1425,8 @@ class BSFGeneratorGUI:
             missing.append("Ausklapp-Sicherheitsabstand")
         if ecf_z is None:
             missing.append("Sicherheitsabstand vor Bohrung")
+        if bcl_val is None:
+            missing.append("Abstand vor Senkflaeche")
         if al_mm is None and tool_ok:
             missing.append("AL (Ausklapplaenge)")
 
@@ -1433,7 +1448,7 @@ class BSFGeneratorGUI:
                     raw_surface_z=raw_z,
                     measurement_face_to_cutting_edge_mm=hs_mm,
                 )
-                if xsf_z is not None and ecf_z is not None and al_mm is not None:
+                if xsf_z is not None and ecf_z is not None and al_mm is not None and bcl_val is not None:
                     heule_pos = compute_heule_process_positions(
                         exit_edge_z=ext_z,
                         entry_edge_z=ent_z,
@@ -1442,6 +1457,7 @@ class BSFGeneratorGUI:
                         deployment_length_al_mm=al_mm,
                         x_safety_clearance_mm=xsf_z,
                         entry_clearance_mm=ecf_z,
+                        b_clearance_mm=bcl_val,
                         full_cut_overlap_mm=fco_val if fco_val is not None else 0.25,
                         raw_surface_z=raw_z,
                     )
@@ -2140,6 +2156,7 @@ class BSFGeneratorGUI:
             x_safety_clearance=_entry_float("x_safety_clearance", "Ausklapp-Sicherheitsabstand"),
             entry_clearance=_entry_float("entry_clearance", "Sicherheitsabstand vor Bohrung"),
             full_cut_overlap_mm=_entry_float("full_cut_overlap_mm", "Schnittueberdeckung"),
+            b_clearance=_entry_float("b_clearance", "Abstand vor Senkflaeche"),
             tool_profile_key=tool_profile.key,
             spindle_speed=_entry_int("spindle_speed", "Spindeldrehzahl"),
             feed=_entry_float("feed_rate", "Vorschub"),
@@ -2180,6 +2197,7 @@ class BSFGeneratorGUI:
             "x_safety_clearance": self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else "2.000",
             "entry_clearance": self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else "1.000",
             "full_cut_overlap_mm": self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else "0.250",
+            "b_clearance": self.entries["b_clearance"].get() if "b_clearance" in self.entries else "1.000",
             "tool_profile": self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
             "spindle": self.entries["spindle_speed"].get(),
             "feed": self.entries["feed_rate"].get(),
@@ -2211,6 +2229,7 @@ class BSFGeneratorGUI:
         self._set_entry_value("entry_edge_z", snapshot.get("entry_edge_z", ""))
         self._set_entry_value("entry_clearance", snapshot.get("entry_clearance", "1.000"))
         self._set_entry_value("full_cut_overlap_mm", snapshot.get("full_cut_overlap_mm", "0.250"))
+        self._set_entry_value("b_clearance", snapshot.get("b_clearance", "1.000"))
         self.bsf_tool_profile_var.set(snapshot.get("tool_profile", TOOL_SELECTION_REQUIRED))
         self.on_bsf_tool_profile_change()
         self._set_entry_value("spindle_speed", snapshot["spindle"])
@@ -2257,6 +2276,7 @@ class BSFGeneratorGUI:
         self._set_entry_value("entry_edge_z", "" if doc.entry_edge_z is None else f"{doc.entry_edge_z:g}")
         self._set_entry_value("entry_clearance", f"{doc.entry_clearance:g}")
         self._set_entry_value("full_cut_overlap_mm", f"{doc.full_cut_overlap_mm:g}")
+        self._set_entry_value("b_clearance", f"{getattr(doc, 'b_clearance', 1.0):g}")
         if doc.tool_profile_key:
             profile = profile_by_key(doc.tool_profile_key)
             self.bsf_tool_profile_var.set(profile.designation if profile is not None else TOOL_SELECTION_REQUIRED)
@@ -2964,6 +2984,7 @@ class BSFGeneratorGUI:
         xsf = self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else ""
         ecf = self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else ""
         fco = self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else ""
+        bcl = self.entries["b_clearance"].get() if "b_clearance" in self.entries else ""
         safe_txt = self.entries["safe_z"].get() if "safe_z" in self.entries else ""
         end_txt = self.entries["end_safe_z"].get() if "end_safe_z" in self.entries else ""
         try:
@@ -2974,6 +2995,7 @@ class BSFGeneratorGUI:
             xsf_z = parse_optional_finite_mm(xsf)
             ecf_z = parse_optional_finite_mm(ecf)
             fco_val = parse_optional_finite_mm(fco)
+            bcl_val = parse_optional_finite_mm(bcl)
             safe_z = parse_optional_finite_mm(safe_txt)
             end_safe_z = parse_optional_finite_mm(end_txt)
         except ValueError:
@@ -3014,6 +3036,7 @@ class BSFGeneratorGUI:
             if (
                 xsf_z is not None
                 and ecf_z is not None
+                and bcl_val is not None
                 and profile.deployment_length_al_mm is not None
             ):
                 pos = compute_heule_process_positions(
@@ -3024,6 +3047,7 @@ class BSFGeneratorGUI:
                     deployment_length_al_mm=profile.deployment_length_al_mm,
                     x_safety_clearance_mm=xsf_z,
                     entry_clearance_mm=ecf_z,
+                    b_clearance_mm=bcl_val,
                     full_cut_overlap_mm=fco_val if fco_val is not None else 0.25,
                     raw_surface_z=raw_z,
                 )
@@ -3121,12 +3145,13 @@ class BSFGeneratorGUI:
             xsf_z = parse_optional_finite_mm(self.entries["x_safety_clearance"].get())
             ecf_z = parse_optional_finite_mm(self.entries["entry_clearance"].get())
             fco = parse_optional_finite_mm(self.entries["full_cut_overlap_mm"].get())
+            bcl = parse_optional_finite_mm(self.entries["b_clearance"].get())
             end_cur = parse_optional_finite_mm(self.entries["end_safe_z"].get())
             reserve = parse_optional_finite_mm(self.bsf_safe_reserve_var.get())
         except ValueError as exc:
             messagebox.showerror("Sicherheits-Z", str(exc))
             return
-        if None in (ent_z, ext_z, tgt_z, xsf_z, ecf_z) or reserve is None:
+        if None in (ent_z, ext_z, tgt_z, xsf_z, ecf_z, bcl) or reserve is None:
             messagebox.showwarning("Sicherheits-Z", "Geometrie oder Reserve unvollstaendig.")
             return
         try:
@@ -3141,6 +3166,7 @@ class BSFGeneratorGUI:
                 deployment_length_al_mm=profile.deployment_length_al_mm,
                 x_safety_clearance_mm=xsf_z,
                 entry_clearance_mm=ecf_z,
+                b_clearance_mm=bcl,
                 full_cut_overlap_mm=fco if fco is not None else 0.25,
                 raw_surface_z=raw_z,
             )
@@ -3845,6 +3871,9 @@ class BSFGeneratorGUI:
             full_cut_overlap_mm_val = parse_optional_finite_mm(
                 self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else ""
             )
+            b_clearance = parse_optional_finite_mm(
+                self.entries["b_clearance"].get() if "b_clearance" in self.entries else ""
+            )
         except ValueError as exc:
             messagebox.showerror("HEULE Prozessgeometrie", str(exc))
             return
@@ -3886,6 +3915,8 @@ class BSFGeneratorGUI:
             entry_clearance = 1.0
         if full_cut_overlap_mm_val is None:
             full_cut_overlap_mm_val = 0.25
+        if b_clearance is None:
+            b_clearance = 1.0
         if x_safety_clearance < 0:
             messagebox.showerror("HEULE Freifahrposition", "Ausklapp-Sicherheitsabstand muss >= 0 sein.")
             return
@@ -3894,6 +3925,9 @@ class BSFGeneratorGUI:
             return
         if full_cut_overlap_mm_val < 0:
             messagebox.showerror("HEULE Schnittueberdeckung", "Schnittueberdeckung muss >= 0 sein.")
+            return
+        if b_clearance < 0:
+            messagebox.showerror("Abstand vor Senkflaeche", "Abstand vor Senkflaeche muss >= 0 sein.")
             return
         if blade.deployment_length_al_mm is None:
             messagebox.showerror("HEULE AL", "MANUFACTURER_PROFILE_VALUE_MISSING = deployment_length_al_mm")
@@ -3915,6 +3949,7 @@ class BSFGeneratorGUI:
                 deployment_length_al_mm=blade.deployment_length_al_mm,
                 x_safety_clearance_mm=x_safety_clearance,
                 entry_clearance_mm=entry_clearance,
+                b_clearance_mm=b_clearance,
                 full_cut_overlap_mm=full_cut_overlap_mm_val,
                 raw_surface_z=raw_surface_z,
             )

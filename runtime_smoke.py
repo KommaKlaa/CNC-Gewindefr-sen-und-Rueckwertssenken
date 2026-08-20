@@ -90,6 +90,7 @@ def _execute_smoke(app) -> Dict[str, Any]:
     record("bgf_preview_help", lambda: _bgf_windows(app))
     record("bsf_nc", lambda: _bsf_nc(app))
     record("bsf_endmode", lambda: _bsf_endmode(app))
+    record("bsf_b_clearance", lambda: _bsf_b_clearance(app))
     record("bsf_list_files", lambda: _bsf_files(app))
     record("bsf_preview_help", lambda: _bsf_windows(app))
     record("heidenhain_h", lambda: _export_h(app))
@@ -740,6 +741,77 @@ def _bsf_endmode(app) -> Dict[str, str]:
         "BSF_SAFEZ_RESERVE_BUTTON": "PASS"
         if hasattr(app, "apply_bsf_safe_z_minimum_plus_reserve")
         else "FAIL",
+    }
+
+
+def _bsf_b_clearance(app) -> Dict[str, str]:
+    """Sichtbarer Abstand vor Senkflaeche: Default/Custom/Stale/Preview/Chain."""
+    from nc_state import NC_STATE_CURRENT, NC_STATE_STALE
+    from preview.bgf_preview_window import BGFPreviewWindow
+
+    app.mode_var.set(MODE_BSF)
+    app.on_mode_change(None)
+    app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
+    app.on_bsf_tool_profile_change()
+    app.position_mode_var.set("Einzelposition")
+    app.on_position_mode_change(None)
+    for k, v in (
+        ("entry_edge_z", "105"),
+        ("exit_edge_z", "80"),
+        ("raw_surface_z", "75"),
+        ("target_surface_z", "85"),
+        ("entry_clearance", "5"),
+        ("x_safety_clearance", "2"),
+        ("b_clearance", "1.000"),
+        ("full_cut_overlap_mm", "0.250"),
+        ("safe_z", "115"),
+        ("end_safe_z", "200"),
+        ("dwell_time", "1.5"),
+        ("feed_rate", "60"),
+        ("spindle_speed", "800"),
+        ("single_x", "0"),
+        ("single_y", "0"),
+    ):
+        _set_entry(app, k, v)
+
+    visible = "b_clearance" in app.entries
+    default_ok = app.entries["b_clearance"].get() == "1.000"
+    app.refresh_bsf_geometry_summary()
+    default_b = app.bsf_position_b_var.get() == "Z+65.450"
+
+    app.bsf_end_mode_var.set(bsf_end_mode_label(BSF_END_MODE_CHAIN))
+    app.generate_bsf_code()
+    chain_default = app.output_text.get("1.0", "end")
+    stale_before = app.nc_guard.nc_state(app, output_text=chain_default) == NC_STATE_CURRENT
+    _set_entry(app, "b_clearance", "2.000")
+    stale_after = app.nc_guard.nc_state(app, output_text=chain_default) == NC_STATE_STALE
+
+    app.refresh_bsf_geometry_summary()
+    custom_b = app.bsf_position_b_var.get() == "Z+64.450"
+    snap = app.build_bsf_preview_snapshot()
+    preview_ok = abs((snap.bsf_b_measurement_face_z or 0) - 64.45) < 1e-6
+    preview = BGFPreviewWindow(app.root, snapshot_provider=lambda: snap)
+    preview.win.update_idletasks()
+    detail = preview._format_bsf_point_detail(snap.points[0])
+    preview.win.destroy()
+    preview_text = "Z+64.450" in detail
+
+    app.generate_bsf_code()
+    chain_custom = app.output_text.get("1.0", "end")
+    app.bsf_end_mode_var.set(bsf_end_mode_label(BSF_END_MODE_STANDALONE))
+    app.generate_bsf_code()
+    standalone_custom = app.output_text.get("1.0", "end")
+    chain_ok = "Z+64.4500" in chain_custom and "Z+110.0000" in chain_custom
+    standalone_ok = "Z+64.4500" in standalone_custom and "Z+110.0000" in standalone_custom
+
+    return {
+        "BSF_B_CLEARANCE_VISIBLE": "PASS" if visible else "FAIL",
+        "BSF_B_CLEARANCE_DEFAULT": "PASS" if (default_ok and default_b) else "FAIL",
+        "BSF_B_CLEARANCE_CUSTOM": "PASS" if custom_b else "FAIL",
+        "BSF_B_CLEARANCE_STALE": "PASS" if (stale_before and stale_after) else "FAIL",
+        "BSF_B_CLEARANCE_PREVIEW": "PASS" if (preview_ok and preview_text) else "FAIL",
+        "BSF_B_CLEARANCE_CHAIN": "PASS" if chain_ok else "FAIL",
+        "BSF_B_CLEARANCE_STANDALONE": "PASS" if standalone_ok else "FAIL",
     }
 
 
