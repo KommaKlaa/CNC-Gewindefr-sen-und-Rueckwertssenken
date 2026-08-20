@@ -606,64 +606,104 @@ class BSFGeneratorGUI:
         self.on_bsf_tool_profile_change()
 
     def create_bsf_processing_panel(self) -> None:
-        """HEULE BSF Bearbeitungsparameter – direkte Z0-Koordinaten."""
-        frame = ttk.LabelFrame(self.params_host, text="HEULE BSF Bearbeitungsparameter", padding=8)
-        self.bsf_processing_frame = frame
+        """HEULE BSF Bearbeitungsparameter – 2-Spalten-Layout (Eingaben | Geometrie/Safe)."""
+        mid = ttk.Frame(self.params_host)
+        self.bsf_mid_frame = mid
+        mid.columnconfigure(0, weight=3, minsize=360)
+        mid.columnconfigure(1, weight=2, minsize=280)
+        mid.rowconfigure(0, weight=1)
+
+        left = ttk.LabelFrame(mid, text="HEULE BSF Bearbeitungsparameter", padding=8)
+        left.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 6))
+        left.columnconfigure(1, weight=1)
+        left.columnconfigure(3, weight=1)
+        self.bsf_processing_frame = left
+
+        right = ttk.Frame(mid)
+        right.grid(row=0, column=1, sticky=tk.NSEW)
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(0, weight=1)
+        self.bsf_right_column = right
 
         ttk.Label(
-            frame,
+            left,
             text=(
                 "Werkstuecknullpunkt Z0 = 0,000. Alle Z-Werte unten beziehen sich direkt auf "
                 "den aktiven Werkstuecknullpunkt.\n"
                 "Werkzeug kommt von +Z und faehrt zum Durchfahren in -Z. Rueckwaertssenken in +Z zur Spindel."
             ),
             font=("Segoe UI", 8),
-            wraplength=920,
+            wraplength=520,
             justify=tk.LEFT,
-        ).grid(row=0, column=0, columnspan=6, sticky=tk.W, pady=(0, 6))
+        ).grid(row=0, column=0, columnspan=4, sticky=tk.EW, pady=(0, 8))
 
-        ttk.Label(frame, text="Bohrungs-Eintrittskante Z [mm]:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.entries["entry_edge_z"] = ttk.Entry(frame, width=12)
-        self.entries["entry_edge_z"].insert(0, "")
-        self.entries["entry_edge_z"].grid(row=1, column=1, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Bohrungs-Austrittskante / Senkseite Z [mm]:").grid(
-            row=1, column=2, sticky=tk.W, pady=2
+        # --- Bohrungskanten ---
+        ttk.Label(left, text="Bohrungskanten", font=("Segoe UI", 9, "bold")).grid(
+            row=1, column=0, columnspan=4, sticky=tk.W, pady=(2, 2)
         )
-        self.entries["exit_edge_z"] = ttk.Entry(frame, width=12)
+        ttk.Label(left, text="Bohrungs-Eintrittskante Z [mm]:").grid(row=2, column=0, sticky=tk.W, pady=3)
+        self.entries["entry_edge_z"] = ttk.Entry(left, width=14)
+        self.entries["entry_edge_z"].insert(0, "")
+        self.entries["entry_edge_z"].grid(row=2, column=1, sticky=tk.EW, pady=3, padx=(4, 12))
+        ttk.Label(left, text="Bohrungs-Austrittskante / Senkseite Z [mm]:").grid(
+            row=2, column=2, sticky=tk.W, pady=3
+        )
+        self.entries["exit_edge_z"] = ttk.Entry(left, width=14)
         self.entries["exit_edge_z"].insert(0, "")
-        self.entries["exit_edge_z"].grid(row=1, column=3, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Ziel-Senkflaeche Z [mm]:").grid(row=1, column=4, sticky=tk.W, pady=2)
-        self.entries["target_surface_z"] = ttk.Entry(frame, width=12)
+        self.entries["exit_edge_z"].grid(row=2, column=3, sticky=tk.EW, pady=3, padx=(4, 0))
+
+        # --- Ziel- / Rohflaechen ---
+        ttk.Label(left, text="Ziel- / Rohflaechen", font=("Segoe UI", 9, "bold")).grid(
+            row=3, column=0, columnspan=4, sticky=tk.W, pady=(10, 2)
+        )
+        ttk.Label(left, text="Ziel-Senkflaeche Z [mm]:").grid(row=4, column=0, sticky=tk.W, pady=3)
+        self.entries["target_surface_z"] = ttk.Entry(left, width=14)
         self.entries["target_surface_z"].insert(0, "")
-        self.entries["target_surface_z"].grid(row=1, column=5, sticky=tk.W, pady=2)
-
-        ttk.Label(frame, text="Rohflaeche / Ist-Z [mm] (optional):").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.entries["raw_surface_z"] = ttk.Entry(frame, width=12)
+        self.entries["target_surface_z"].grid(row=4, column=1, sticky=tk.EW, pady=3, padx=(4, 12))
+        ttk.Label(left, text="Rohflaeche / Ist-Z [mm] (optional):").grid(row=4, column=2, sticky=tk.W, pady=3)
+        self.entries["raw_surface_z"] = ttk.Entry(left, width=14)
         self.entries["raw_surface_z"].insert(0, "")
-        self.entries["raw_surface_z"].grid(row=2, column=1, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Wartezeit Druckaufbau (s):").grid(row=2, column=2, sticky=tk.W, pady=2)
-        self.entries["dwell_time"] = ttk.Entry(frame, width=12)
-        self.entries["dwell_time"].insert(0, "1.5")
-        self.entries["dwell_time"].grid(row=2, column=3, sticky=tk.W, pady=2, padx=(0, 12))
+        self.entries["raw_surface_z"].grid(row=4, column=3, sticky=tk.EW, pady=3, padx=(4, 0))
 
-        ttk.Label(frame, text="Ausklapp-Sicherheitsabstand [mm]:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.entries["x_safety_clearance"] = ttk.Entry(frame, width=12)
+        # --- Sicherheitswerte ---
+        ttk.Label(left, text="Sicherheitswerte", font=("Segoe UI", 9, "bold")).grid(
+            row=5, column=0, columnspan=4, sticky=tk.W, pady=(10, 2)
+        )
+        ttk.Label(left, text="Ausklapp-Sicherheitsabstand [mm]:").grid(row=6, column=0, sticky=tk.W, pady=3)
+        self.entries["x_safety_clearance"] = ttk.Entry(left, width=14)
         self.entries["x_safety_clearance"].insert(0, "2.000")
-        self.entries["x_safety_clearance"].grid(row=3, column=1, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Sicherheitsabstand vor Bohrung [mm]:").grid(row=3, column=2, sticky=tk.W, pady=2)
-        self.entries["entry_clearance"] = ttk.Entry(frame, width=12)
+        self.entries["x_safety_clearance"].grid(row=6, column=1, sticky=tk.EW, pady=3, padx=(4, 12))
+        ttk.Label(left, text="Sicherheitsabstand vor Bohrung [mm]:").grid(row=6, column=2, sticky=tk.W, pady=3)
+        self.entries["entry_clearance"] = ttk.Entry(left, width=14)
         self.entries["entry_clearance"].insert(0, "1.000")
-        self.entries["entry_clearance"].grid(row=3, column=3, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Schnittueberdeckung [mm]:").grid(row=3, column=4, sticky=tk.W, pady=2)
-        self.entries["full_cut_overlap_mm"] = ttk.Entry(frame, width=12)
+        self.entries["entry_clearance"].grid(row=6, column=3, sticky=tk.EW, pady=3, padx=(4, 0))
+
+        # --- Prozessparameter ---
+        ttk.Label(left, text="Prozessparameter", font=("Segoe UI", 9, "bold")).grid(
+            row=7, column=0, columnspan=4, sticky=tk.W, pady=(10, 2)
+        )
+        ttk.Label(left, text="Schnittueberdeckung [mm]:").grid(row=8, column=0, sticky=tk.W, pady=3)
+        self.entries["full_cut_overlap_mm"] = ttk.Entry(left, width=14)
         self.entries["full_cut_overlap_mm"].insert(0, "0.250")
-        self.entries["full_cut_overlap_mm"].grid(row=3, column=5, sticky=tk.W, pady=2)
+        self.entries["full_cut_overlap_mm"].grid(row=8, column=1, sticky=tk.EW, pady=3, padx=(4, 12))
+        ttk.Label(left, text="Wartezeit Druckaufbau (s):").grid(row=8, column=2, sticky=tk.W, pady=3)
+        self.entries["dwell_time"] = ttk.Entry(left, width=14)
+        self.entries["dwell_time"].insert(0, "1.5")
+        self.entries["dwell_time"].grid(row=8, column=3, sticky=tk.EW, pady=3, padx=(4, 0))
 
         ttk.Label(
-            frame,
+            left,
             text="HEULE-Programmierbeispiel: X-Sicherheit 2,0 mm / A-Sicherheit 1,0 mm / C-Ueberdeckung 0,25 mm – vor Einsatz pruefen.",
             font=("Segoe UI", 8),
-        ).grid(row=4, column=0, columnspan=6, sticky=tk.W, pady=(0, 4))
+            wraplength=520,
+        ).grid(row=9, column=0, columnspan=4, sticky=tk.EW, pady=(6, 2))
+
+        self.reduce_approach_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            left,
+            text="Anschnitt-Vorschub reduzieren (50%)",
+            variable=self.reduce_approach_var,
+        ).grid(row=10, column=0, columnspan=4, sticky=tk.W, pady=(8, 0))
 
         self.bsf_z0_var = tk.StringVar(value="Z0.000")
         self.bsf_sink_depth_var = tk.StringVar(value="—")
@@ -685,8 +725,10 @@ class BSFGeneratorGUI:
         self.bsf_safe_detail_var = tk.StringVar(value="")
         self.bsf_safe_reserve_var = tk.StringVar(value="5.000")
 
-        summary = ttk.LabelFrame(frame, text="Werkstueck / Geometrie (read-only)", padding=6)
-        summary.grid(row=5, column=0, columnspan=6, sticky=tk.EW, pady=(6, 2))
+        summary = ttk.LabelFrame(right, text="Werkstueck / Geometrie (read-only)", padding=8)
+        summary.grid(row=0, column=0, sticky=tk.NSEW, pady=(0, 6))
+        summary.columnconfigure(1, weight=1)
+        self.bsf_geometry_summary_frame = summary
         rows = [
             (0, "Werkstuecknullpunkt:", self.bsf_z0_var),
             (1, "Senktiefe (abgeleitet):", self.bsf_sink_depth_var),
@@ -702,52 +744,51 @@ class BSFGeneratorGUI:
             (11, "Hs:", self.bsf_hs_var),
         ]
         for r, label, var in rows:
-            ttk.Label(summary, text=label).grid(row=r, column=0, sticky=tk.W, padx=(0, 8), pady=1)
-            ttk.Label(summary, textvariable=var).grid(row=r, column=1, sticky=tk.W, pady=1)
-        summary.columnconfigure(1, weight=1)
+            ttk.Label(summary, text=label).grid(row=r, column=0, sticky=tk.W, padx=(0, 10), pady=2)
+            ttk.Label(summary, textvariable=var).grid(row=r, column=1, sticky=tk.EW, pady=2)
 
-        safe_box = ttk.LabelFrame(frame, text="Verfahr-/Sicherheitspruefung", padding=6)
-        safe_box.grid(row=6, column=0, columnspan=6, sticky=tk.EW, pady=(4, 2))
-        ttk.Label(safe_box, text="Erforderliches Mindest-Sicherheits-Z:").grid(row=0, column=0, sticky=tk.W, pady=1)
-        ttk.Label(safe_box, textvariable=self.bsf_required_safe_z_var).grid(row=0, column=1, sticky=tk.W, pady=1)
-        ttk.Label(safe_box, text="Aktuelles Sicherheits-Z:").grid(row=1, column=0, sticky=tk.W, pady=1)
-        ttk.Label(safe_box, textvariable=self.bsf_current_safe_z_var).grid(row=1, column=1, sticky=tk.W, pady=1)
-        ttk.Label(safe_box, text="Aktuelles End-Sicherheits-Z:").grid(row=2, column=0, sticky=tk.W, pady=1)
-        ttk.Label(safe_box, textvariable=self.bsf_current_end_safe_z_var).grid(row=2, column=1, sticky=tk.W, pady=1)
-        ttk.Label(safe_box, text="Status:").grid(row=3, column=0, sticky=tk.W, pady=1)
+        safe_box = ttk.LabelFrame(right, text="Verfahr-/Sicherheitspruefung", padding=8)
+        safe_box.grid(row=1, column=0, sticky=tk.NSEW, pady=(0, 6))
+        safe_box.columnconfigure(1, weight=1)
+        self.bsf_safe_box_frame = safe_box
+        ttk.Label(safe_box, text="Erforderliches Mindest-Sicherheits-Z:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        ttk.Label(safe_box, textvariable=self.bsf_required_safe_z_var).grid(row=0, column=1, sticky=tk.EW, pady=2)
+        ttk.Label(safe_box, text="Aktuelles Sicherheits-Z:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        ttk.Label(safe_box, textvariable=self.bsf_current_safe_z_var).grid(row=1, column=1, sticky=tk.EW, pady=2)
+        ttk.Label(safe_box, text="Aktuelles End-Sicherheits-Z:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        ttk.Label(safe_box, textvariable=self.bsf_current_end_safe_z_var).grid(row=2, column=1, sticky=tk.EW, pady=2)
+        ttk.Label(safe_box, text="Status:").grid(row=3, column=0, sticky=tk.W, pady=2)
         self._bsf_safe_status_label = ttk.Label(safe_box, textvariable=self.bsf_safe_status_var)
-        self._bsf_safe_status_label.grid(row=3, column=1, sticky=tk.W, pady=1)
-        ttk.Label(safe_box, textvariable=self.bsf_safe_detail_var, foreground="#57606a", wraplength=700).grid(
-            row=4, column=0, columnspan=3, sticky=tk.W, pady=(2, 4)
+        self._bsf_safe_status_label.grid(row=3, column=1, sticky=tk.EW, pady=2)
+        ttk.Label(safe_box, textvariable=self.bsf_safe_detail_var, foreground="#57606a", wraplength=360).grid(
+            row=4, column=0, columnspan=2, sticky=tk.EW, pady=(4, 6)
         )
         ttk.Label(safe_box, text="Sicherheitsreserve [mm]:").grid(row=5, column=0, sticky=tk.W, pady=2)
-        reserve_entry = ttk.Entry(safe_box, width=10, textvariable=self.bsf_safe_reserve_var)
+        reserve_entry = ttk.Entry(safe_box, width=12, textvariable=self.bsf_safe_reserve_var)
         reserve_entry.grid(row=5, column=1, sticky=tk.W, pady=2)
         ttk.Button(
             safe_box,
             text="Minimum + Reserve uebernehmen",
             command=self.apply_bsf_safe_z_minimum_plus_reserve,
-        ).grid(row=5, column=2, sticky=tk.W, padx=(8, 0), pady=2)
+        ).grid(row=6, column=0, columnspan=2, sticky=tk.EW, pady=(6, 2))
         ttk.Label(
             safe_box,
             text="Reserve ist App-/Benutzerwert, keine HEULE-Herstellervorgabe.",
             font=("Segoe UI", 8),
             foreground="#57606a",
-        ).grid(row=6, column=0, columnspan=3, sticky=tk.W)
-
-        self.reduce_approach_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            frame,
-            text="Anschnitt-Vorschub reduzieren (50%)",
-            variable=self.reduce_approach_var,
-        ).grid(row=7, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
+            wraplength=360,
+        ).grid(row=7, column=0, columnspan=2, sticky=tk.EW)
 
         self.refresh_bsf_geometry_summary()
 
     def create_bsf_machine_panel(self) -> None:
-        frame = ttk.LabelFrame(self.params_host, text="HEULE BSF Maschinenoptionen", padding=8)
+        parent = getattr(self, "bsf_right_column", self.params_host)
+        frame = ttk.LabelFrame(parent, text="HEULE BSF Maschinenoptionen", padding=8)
         self.bsf_machine_frame = frame
         self.machine_frame = frame  # Alias
+        if parent is self.bsf_right_column:
+            frame.grid(row=2, column=0, sticky=tk.NSEW)
+        frame.columnconfigure(1, weight=1)
 
         ttk.Label(frame, text="BSF Messer einfahren / geschlossen halten:").grid(row=0, column=0, sticky=tk.W, pady=2)
         self.m_activate_var = tk.StringVar(value="IKZ Ein (M7)")
@@ -758,7 +799,7 @@ class BSFGeneratorGUI:
             state="readonly",
             width=28,
         )
-        self.m_activate_combo.grid(row=0, column=1, sticky=tk.W, pady=2)
+        self.m_activate_combo.grid(row=0, column=1, sticky=tk.EW, pady=2, padx=(4, 4))
         self.m_activate_combo.bind("<<ComboboxSelected>>", self.on_m_activate_change)
 
         self.m_activate_custom = ttk.Entry(frame, width=12, state="disabled")
@@ -774,7 +815,7 @@ class BSFGeneratorGUI:
             state="readonly",
             width=28,
         )
-        self.m_deactivate_combo.grid(row=1, column=1, sticky=tk.W, pady=2)
+        self.m_deactivate_combo.grid(row=1, column=1, sticky=tk.EW, pady=2, padx=(4, 4))
         self.m_deactivate_combo.bind("<<ComboboxSelected>>", self.on_m_deactivate_change)
 
         self.m_deactivate_custom = ttk.Entry(frame, width=12, state="disabled")
@@ -785,6 +826,8 @@ class BSFGeneratorGUI:
         pos_frame = ttk.LabelFrame(self.params_host, text="Positionierung", padding=8)
         pos_frame.pack(fill=tk.X, pady=4)
         self.position_frame = pos_frame
+        pos_frame.columnconfigure(1, weight=1)
+        pos_frame.columnconfigure(5, weight=1)
 
         ttk.Label(pos_frame, text="Positionierungsart:").grid(row=0, column=0, sticky=tk.W, pady=2)
 
@@ -810,6 +853,8 @@ class BSFGeneratorGUI:
 
         # --- Teilkreis ---
         self.circle_frame = ttk.LabelFrame(pos_frame, text="Teilkreis", padding=6)
+        for c in (1, 3, 5):
+            self.circle_frame.columnconfigure(c, weight=1)
         circle_fields = [
             (0, 0, "Teilkreis-Durchmesser (mm):", "diameter", "715"),
             (0, 2, "Anzahl Positionen:", "count", "24"),
@@ -821,14 +866,14 @@ class BSFGeneratorGUI:
             ttk.Label(self.circle_frame, text=label).grid(row=row, column=col, sticky=tk.W, pady=2, padx=(0, 4))
             entry = ttk.Entry(self.circle_frame, width=12)
             entry.insert(0, default)
-            entry.grid(row=row, column=col + 1, sticky=tk.W, pady=2, padx=(0, 12))
+            entry.grid(row=row, column=col + 1, sticky=tk.EW, pady=2, padx=(0, 12))
             self.entries[key] = entry
 
         self._circle_surface_z_label = ttk.Label(self.circle_frame, text="Bohrungsanfang Z [mm]:")
         self._circle_surface_z_label.grid(row=1, column=4, sticky=tk.W, pady=2, padx=(0, 4))
         self.entries["circle_surface_z"] = ttk.Entry(self.circle_frame, width=12)
         self.entries["circle_surface_z"].insert(0, "0")
-        self.entries["circle_surface_z"].grid(row=1, column=5, sticky=tk.W, pady=2, padx=(0, 12))
+        self.entries["circle_surface_z"].grid(row=1, column=5, sticky=tk.EW, pady=2, padx=(0, 12))
         self.entries["circle_surface_z"].bind("<KeyRelease>", self.on_bgf_depth_input_change)
         self.entries["circle_surface_z"].bind("<FocusOut>", self.on_bgf_depth_input_change)
 
@@ -1544,8 +1589,7 @@ class BSFGeneratorGUI:
             self.bgf_tool_frame,
             self.bgf_processing_frame,
             self.bsf_tool_frame,
-            self.bsf_processing_frame,
-            self.bsf_machine_frame,
+            self.bsf_mid_frame,
             self.position_frame,
             self.common_frame,
         ):
@@ -1570,8 +1614,7 @@ class BSFGeneratorGUI:
         else:
             show_pack(self.bsf_tool_frame, fill=tk.X, pady=4)
             show_pack(self.position_frame, fill=tk.X, pady=4)
-            show_pack(self.bsf_processing_frame, fill=tk.X, pady=4)
-            show_pack(self.bsf_machine_frame, fill=tk.X, pady=4)
+            show_pack(self.bsf_mid_frame, fill=tk.BOTH, expand=True, pady=4)
             self._set_position_combo_values(POSITION_LABELS_BSF)
             self._bgf_end_mode_label.grid_remove()
             self.bgf_end_mode_combo.grid_remove()

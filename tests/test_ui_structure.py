@@ -32,17 +32,17 @@ class TestUi1Visibility(unittest.TestCase):
         self.assertTrue(is_mapped(app.position_frame))
         self.assertTrue(is_mapped(app.common_frame))
         self.assertFalse(is_mapped(app.bsf_tool_frame))
-        self.assertFalse(is_mapped(app.bsf_processing_frame))
-        self.assertFalse(is_mapped(app.bsf_machine_frame))
-        # BSF-spezifische Entries existieren, liegen aber in ausgeblendeten Frames
+        self.assertFalse(is_mapped(app.bsf_mid_frame))
+        # BSF-spezifische Entries existieren, liegen aber im ausgeblendeten Mid-Frame
         self.assertIn("entry_edge_z", app.entries)
-        self.assertFalse(is_mapped(app.bsf_processing_frame))
+        self.assertFalse(is_mapped(app.bsf_mid_frame))
 
     def test_bsf_hides_bgf_fields(self):
         app = self.app
         app.mode_var.set(MODE_BSF)
         app.on_mode_change(None)
         self.assertTrue(is_mapped(app.bsf_tool_frame))
+        self.assertTrue(is_mapped(app.bsf_mid_frame))
         self.assertTrue(is_mapped(app.bsf_processing_frame))
         self.assertTrue(is_mapped(app.bsf_machine_frame))
         self.assertTrue(is_mapped(app.position_frame))
