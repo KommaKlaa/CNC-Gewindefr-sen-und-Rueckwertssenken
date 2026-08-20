@@ -197,6 +197,17 @@ def compute_heule_process_positions(
     )
 
 
+def required_bsf_safe_z(heule_pos: BSFHeuleProcessPositions) -> float:
+    """Mindest-Sicherheits-Z = max(A, X, B, C, D). Eine Source of Truth."""
+    return max(
+        heule_pos.a_measurement_face_z,
+        heule_pos.x_measurement_face_z,
+        heule_pos.b_measurement_face_z,
+        heule_pos.c_measurement_face_z,
+        heule_pos.d_measurement_face_z,
+    )
+
+
 def validate_bsf_safe_z_direct(
     safe_z: float,
     end_safe_z: float,
@@ -205,17 +216,14 @@ def validate_bsf_safe_z_direct(
     """safe_z muss oberhalb der hoechsten Prozesslage (typisch A) liegen."""
     if not math.isfinite(safe_z) or not math.isfinite(end_safe_z):
         return "Sicherheits-Z darf nicht NaN/Infinity sein."
-    required = max(
-        heule_pos.a_measurement_face_z,
-        heule_pos.x_measurement_face_z,
-        heule_pos.b_measurement_face_z,
-        heule_pos.c_measurement_face_z,
-        heule_pos.d_measurement_face_z,
-    )
+    required = required_bsf_safe_z(heule_pos)
     if safe_z < required or end_safe_z < required:
         return (
-            "Sicherheits-Z muss oberhalb der werkstueckbezogenen Bearbeitungslagen liegen "
-            f"(mindestens Z{required:+.4f})."
+            "Sicherheits-Z ist zu niedrig.\n\n"
+            f"Erforderliches Minimum:\nZ{required:+.3f}\n\n"
+            f"Aktuell:\nSicherheits-Z Z{safe_z:+.3f}\n"
+            f"End-Sicherheits-Z Z{end_safe_z:+.3f}\n\n"
+            "Bitte Sicherheits-Z bzw. End-Sicherheits-Z anpassen."
         )
     return None
 

@@ -204,8 +204,8 @@ class TestBsfHelpWindowPhase2(unittest.TestCase):
         self.assertIn("HEULE", HEULE_ATTRIBUTION_TEXT)
         self.assertIsNotNone(win.nb)
         if get_heule_bsf_reference_image_path() is None:
-            self.assertIn("nicht installiert", win.orig_msg.get())
-            self.assertEqual(HEULE_MISSING_ASSET_TEXT, "Originale HEULE-Herstellerabbildung ist lokal nicht installiert.")
+            self.assertIn("ausgewaehlt", win.orig_msg.get().lower())
+            self.assertEqual(HEULE_MISSING_ASSET_TEXT, "Keine lokale HEULE-Herstellerabbildung ausgewaehlt.")
         win.win.destroy()
         root.destroy()
 

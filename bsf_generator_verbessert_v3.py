@@ -678,6 +678,12 @@ class BSFGeneratorGUI:
         self.bsf_position_d_var = tk.StringVar(value="—")
         self.bsf_al_var = tk.StringVar(value="—")
         self.bsf_hs_var = tk.StringVar(value="—")
+        self.bsf_required_safe_z_var = tk.StringVar(value="—")
+        self.bsf_current_safe_z_var = tk.StringVar(value="—")
+        self.bsf_current_end_safe_z_var = tk.StringVar(value="—")
+        self.bsf_safe_status_var = tk.StringVar(value="— Geometrie noch unvollstaendig")
+        self.bsf_safe_detail_var = tk.StringVar(value="")
+        self.bsf_safe_reserve_var = tk.StringVar(value="5.000")
 
         summary = ttk.LabelFrame(frame, text="Werkstueck / Geometrie (read-only)", padding=6)
         summary.grid(row=5, column=0, columnspan=6, sticky=tk.EW, pady=(6, 2))
@@ -699,17 +705,46 @@ class BSFGeneratorGUI:
             ttk.Label(summary, textvariable=var).grid(row=r, column=1, sticky=tk.W, pady=1)
         summary.columnconfigure(1, weight=1)
 
+        safe_box = ttk.LabelFrame(frame, text="Verfahr-/Sicherheitspruefung", padding=6)
+        safe_box.grid(row=6, column=0, columnspan=6, sticky=tk.EW, pady=(4, 2))
+        ttk.Label(safe_box, text="Erforderliches Mindest-Sicherheits-Z:").grid(row=0, column=0, sticky=tk.W, pady=1)
+        ttk.Label(safe_box, textvariable=self.bsf_required_safe_z_var).grid(row=0, column=1, sticky=tk.W, pady=1)
+        ttk.Label(safe_box, text="Aktuelles Sicherheits-Z:").grid(row=1, column=0, sticky=tk.W, pady=1)
+        ttk.Label(safe_box, textvariable=self.bsf_current_safe_z_var).grid(row=1, column=1, sticky=tk.W, pady=1)
+        ttk.Label(safe_box, text="Aktuelles End-Sicherheits-Z:").grid(row=2, column=0, sticky=tk.W, pady=1)
+        ttk.Label(safe_box, textvariable=self.bsf_current_end_safe_z_var).grid(row=2, column=1, sticky=tk.W, pady=1)
+        ttk.Label(safe_box, text="Status:").grid(row=3, column=0, sticky=tk.W, pady=1)
+        self._bsf_safe_status_label = ttk.Label(safe_box, textvariable=self.bsf_safe_status_var)
+        self._bsf_safe_status_label.grid(row=3, column=1, sticky=tk.W, pady=1)
+        ttk.Label(safe_box, textvariable=self.bsf_safe_detail_var, foreground="#57606a", wraplength=700).grid(
+            row=4, column=0, columnspan=3, sticky=tk.W, pady=(2, 4)
+        )
+        ttk.Label(safe_box, text="Sicherheitsreserve [mm]:").grid(row=5, column=0, sticky=tk.W, pady=2)
+        reserve_entry = ttk.Entry(safe_box, width=10, textvariable=self.bsf_safe_reserve_var)
+        reserve_entry.grid(row=5, column=1, sticky=tk.W, pady=2)
+        ttk.Button(
+            safe_box,
+            text="Minimum + Reserve uebernehmen",
+            command=self.apply_bsf_safe_z_minimum_plus_reserve,
+        ).grid(row=5, column=2, sticky=tk.W, padx=(8, 0), pady=2)
+        ttk.Label(
+            safe_box,
+            text="Reserve ist App-/Benutzerwert, keine HEULE-Herstellervorgabe.",
+            font=("Segoe UI", 8),
+            foreground="#57606a",
+        ).grid(row=6, column=0, columnspan=3, sticky=tk.W)
+
         self.reduce_approach_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             frame,
             text="Anschnitt-Vorschub reduzieren (50%)",
             variable=self.reduce_approach_var,
-        ).grid(row=6, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
+        ).grid(row=7, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
         ttk.Button(
             frame,
             text="Hilfsgrafik Senken",
             command=self.open_bsf_geometry_help,
-        ).grid(row=6, column=4, columnspan=2, sticky=tk.E, pady=(6, 0))
+        ).grid(row=7, column=4, columnspan=2, sticky=tk.E, pady=(6, 0))
 
         self.refresh_bsf_geometry_summary()
 
@@ -1272,6 +1307,8 @@ class BSFGeneratorGUI:
             entry_clearance_text=self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else "1.000",
             overlap_text=self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else "0.250",
             tool_designation=self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
+            safe_z_text=self.entries["safe_z"].get() if "safe_z" in self.entries else "",
+            end_safe_z_text=self.entries["end_safe_z"].get() if "end_safe_z" in self.entries else "",
         )
 
     def build_preview_snapshot(self):
@@ -2721,6 +2758,18 @@ class BSFGeneratorGUI:
         if not hasattr(self, "bsf_target_cutting_edge_var"):
             return
 
+        def _clear_safe():
+            if hasattr(self, "bsf_required_safe_z_var"):
+                self.bsf_required_safe_z_var.set("—")
+            if hasattr(self, "bsf_current_safe_z_var"):
+                self.bsf_current_safe_z_var.set("—")
+            if hasattr(self, "bsf_current_end_safe_z_var"):
+                self.bsf_current_end_safe_z_var.set("—")
+            if hasattr(self, "bsf_safe_status_var"):
+                self.bsf_safe_status_var.set("— Geometrie noch unvollstaendig")
+            if hasattr(self, "bsf_safe_detail_var"):
+                self.bsf_safe_detail_var.set("")
+
         def _clear():
             if hasattr(self, "bsf_z0_var"):
                 self.bsf_z0_var.set("Z0.000")
@@ -2741,6 +2790,7 @@ class BSFGeneratorGUI:
             ):
                 if hasattr(self, name):
                     getattr(self, name).set("—")
+            _clear_safe()
 
         if not hasattr(self, "mode_var") or self.mode_var.get() != MODE_BSF:
             _clear()
@@ -2751,6 +2801,7 @@ class BSFGeneratorGUI:
                 compute_heule_process_positions,
                 parse_optional_finite_mm,
             )
+            from ui.bsf_safe_status import evaluate_bsf_safe_z_status, fmt_axis_z as fmt_safe
         except Exception:
             return
 
@@ -2761,6 +2812,8 @@ class BSFGeneratorGUI:
         xsf = self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else ""
         ecf = self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else ""
         fco = self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else ""
+        safe_txt = self.entries["safe_z"].get() if "safe_z" in self.entries else ""
+        end_txt = self.entries["end_safe_z"].get() if "end_safe_z" in self.entries else ""
         try:
             ent_z = parse_optional_finite_mm(ent)
             ext_z = parse_optional_finite_mm(ext)
@@ -2769,6 +2822,8 @@ class BSFGeneratorGUI:
             xsf_z = parse_optional_finite_mm(xsf)
             ecf_z = parse_optional_finite_mm(ecf)
             fco_val = parse_optional_finite_mm(fco)
+            safe_z = parse_optional_finite_mm(safe_txt)
+            end_safe_z = parse_optional_finite_mm(end_txt)
         except ValueError:
             _clear()
             return
@@ -2776,10 +2831,24 @@ class BSFGeneratorGUI:
         profile = self.get_selected_bsf_tool_profile(show_error=False)
         if hasattr(self, "bsf_z0_var"):
             self.bsf_z0_var.set("Z0.000")
+        if hasattr(self, "bsf_current_safe_z_var"):
+            self.bsf_current_safe_z_var.set(fmt_safe(safe_z))
+        if hasattr(self, "bsf_current_end_safe_z_var"):
+            self.bsf_current_end_safe_z_var.set(fmt_safe(end_safe_z))
+
         if None in (ent_z, ext_z, tgt_z) or profile is None:
             _clear()
             if hasattr(self, "bsf_z0_var"):
                 self.bsf_z0_var.set("Z0.000")
+            if hasattr(self, "bsf_current_safe_z_var"):
+                self.bsf_current_safe_z_var.set(fmt_safe(safe_z))
+            if hasattr(self, "bsf_current_end_safe_z_var"):
+                self.bsf_current_end_safe_z_var.set(fmt_safe(end_safe_z))
+            status = evaluate_bsf_safe_z_status(heule_pos=None, safe_z=safe_z, end_safe_z=end_safe_z)
+            if hasattr(self, "bsf_safe_status_var"):
+                self.bsf_safe_status_var.set(status.headline)
+            if hasattr(self, "bsf_safe_detail_var"):
+                self.bsf_safe_detail_var.set(status.detail)
             return
         try:
             geom = build_workpiece_geometry(
@@ -2809,6 +2878,11 @@ class BSFGeneratorGUI:
             _clear()
             if hasattr(self, "bsf_z0_var"):
                 self.bsf_z0_var.set("Z0.000")
+            status = evaluate_bsf_safe_z_status(heule_pos=None, safe_z=safe_z, end_safe_z=end_safe_z)
+            if hasattr(self, "bsf_safe_status_var"):
+                self.bsf_safe_status_var.set(status.headline)
+            if hasattr(self, "bsf_safe_detail_var"):
+                self.bsf_safe_detail_var.set(status.detail)
             return
 
         if hasattr(self, "bsf_sink_depth_var"):
@@ -2835,6 +2909,13 @@ class BSFGeneratorGUI:
             ):
                 if hasattr(self, name):
                     getattr(self, name).set("—")
+            status = evaluate_bsf_safe_z_status(heule_pos=None, safe_z=safe_z, end_safe_z=end_safe_z)
+            if hasattr(self, "bsf_required_safe_z_var"):
+                self.bsf_required_safe_z_var.set("—")
+            if hasattr(self, "bsf_safe_status_var"):
+                self.bsf_safe_status_var.set(status.headline)
+            if hasattr(self, "bsf_safe_detail_var"):
+                self.bsf_safe_detail_var.set(status.detail)
             return
         if hasattr(self, "bsf_position_a_var"):
             self.bsf_position_a_var.set(f"Z{pos.a_measurement_face_z:+.3f}")
@@ -2846,6 +2927,69 @@ class BSFGeneratorGUI:
             self.bsf_position_c_var.set(f"Z{pos.c_measurement_face_z:+.3f}")
         if hasattr(self, "bsf_position_d_var"):
             self.bsf_position_d_var.set(f"Z{pos.d_measurement_face_z:+.3f}")
+
+        status = evaluate_bsf_safe_z_status(heule_pos=pos, safe_z=safe_z, end_safe_z=end_safe_z)
+        if hasattr(self, "bsf_required_safe_z_var"):
+            self.bsf_required_safe_z_var.set(fmt_safe(status.required_safe_z))
+        if hasattr(self, "bsf_safe_status_var"):
+            self.bsf_safe_status_var.set(status.headline)
+        if hasattr(self, "bsf_safe_detail_var"):
+            self.bsf_safe_detail_var.set(status.detail)
+
+    def apply_bsf_safe_z_minimum_plus_reserve(self) -> None:
+        """Setzt safe_z = required + Reserve und end_safe_z = max(end, neu). Kein Auto-Apply."""
+        from bsf_workpiece_geometry import (
+            compute_heule_process_positions,
+            parse_optional_finite_mm,
+            required_bsf_safe_z,
+        )
+        from ui.bsf_safe_status import apply_minimum_plus_reserve
+
+        profile = self.get_selected_bsf_tool_profile(show_error=False)
+        if profile is None or profile.deployment_length_al_mm is None:
+            messagebox.showwarning("Sicherheits-Z", "HEULE-Werkzeug bzw. Geometrie unvollstaendig.")
+            return
+        try:
+            ent_z = parse_optional_finite_mm(self.entries["entry_edge_z"].get())
+            ext_z = parse_optional_finite_mm(self.entries["exit_edge_z"].get())
+            tgt_z = parse_optional_finite_mm(self.entries["target_surface_z"].get())
+            xsf_z = parse_optional_finite_mm(self.entries["x_safety_clearance"].get())
+            ecf_z = parse_optional_finite_mm(self.entries["entry_clearance"].get())
+            fco = parse_optional_finite_mm(self.entries["full_cut_overlap_mm"].get())
+            end_cur = parse_optional_finite_mm(self.entries["end_safe_z"].get())
+            reserve = parse_optional_finite_mm(self.bsf_safe_reserve_var.get())
+        except ValueError as exc:
+            messagebox.showerror("Sicherheits-Z", str(exc))
+            return
+        if None in (ent_z, ext_z, tgt_z, xsf_z, ecf_z) or reserve is None:
+            messagebox.showwarning("Sicherheits-Z", "Geometrie oder Reserve unvollstaendig.")
+            return
+        try:
+            pos = compute_heule_process_positions(
+                exit_edge_z=ext_z,
+                entry_edge_z=ent_z,
+                target_surface_z=tgt_z,
+                measurement_face_to_cutting_edge_mm=profile.measurement_face_to_cutting_edge_mm,
+                deployment_length_al_mm=profile.deployment_length_al_mm,
+                x_safety_clearance_mm=xsf_z,
+                entry_clearance_mm=ecf_z,
+                full_cut_overlap_mm=fco if fco is not None else 0.25,
+            )
+            required = required_bsf_safe_z(pos)
+            new_safe, new_end = apply_minimum_plus_reserve(
+                required_safe_z=required,
+                reserve_mm=reserve,
+                current_end_safe_z=end_cur,
+            )
+        except ValueError as exc:
+            messagebox.showerror("Sicherheits-Z", str(exc))
+            return
+        self.entries["safe_z"].delete(0, tk.END)
+        self.entries["safe_z"].insert(0, f"{new_safe:.3f}")
+        self.entries["end_safe_z"].delete(0, tk.END)
+        self.entries["end_safe_z"].insert(0, f"{new_end:.3f}")
+        self.refresh_bsf_geometry_summary()
+        self.refresh_nc_output_status()
 
     def get_selected_bsf_tool_profile(self, *, show_error: bool = True):
         profile = profile_by_designation(

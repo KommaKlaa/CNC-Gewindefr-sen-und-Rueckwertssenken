@@ -13,7 +13,9 @@ from bsf_workpiece_geometry import (
     build_workpiece_geometry,
     compute_heule_process_positions,
     parse_optional_finite_mm,
+    required_bsf_safe_z,
 )
+from ui.bsf_safe_status import STATUS_INCOMPLETE, evaluate_bsf_safe_z_status
 from heule_bsf_tools import (
     BSFToolProfile,
     MEASUREMENT_LABEL,
@@ -76,6 +78,14 @@ class BSFGeometryHelpSnapshot:
     z0: float = Z0_CANONICAL
     stoerkontur_e_nc_model: str = STOERKONTUR_E_NC_MODEL
     z0_examples: tuple = Z0_EXAMPLES
+    safe_z: Optional[float] = None
+    end_safe_z: Optional[float] = None
+    required_safe_z: Optional[float] = None
+    safe_status: str = STATUS_INCOMPLETE
+    safe_headline: str = "— Geometrie noch unvollstaendig"
+    x_safety_clearance: Optional[float] = None
+    entry_clearance: Optional[float] = None
+    full_cut_overlap: Optional[float] = None
 
     @property
     def target_cutting_edge_z(self) -> Optional[float]:
@@ -100,6 +110,8 @@ def build_bsf_geometry_help_snapshot(
     entry_clearance_text: str = "1.000",
     overlap_text: str = "0.250",
     tool_designation: str = "",
+    safe_z_text: str = "",
+    end_safe_z_text: str = "",
     **_legacy_ignored,
 ) -> BSFGeometryHelpSnapshot:
     """Baut den Hilfesnapshot aus GUI-Texten. Keine Dialoge, keine erfundenen Werte."""
@@ -114,6 +126,8 @@ def build_bsf_geometry_help_snapshot(
     x_safety = _parse_optional_mm(x_safety_text)
     entry_clearance = _parse_optional_mm(entry_clearance_text)
     overlap = _parse_optional_mm(overlap_text)
+    safe_z = _parse_optional_mm(safe_z_text)
+    end_safe_z = _parse_optional_mm(end_safe_z_text)
 
     notes: List[str] = []
     if entry_z is None:
@@ -131,6 +145,7 @@ def build_bsf_geometry_help_snapshot(
     material_removal = None
     programmed_target = None
     a_z = x_z = b_z = c_z = d_z = None
+    heule_pos = None
     if None not in (entry_z, exit_z, target_z) and tool_profile is not None:
         try:
             geom = build_workpiece_geometry(
@@ -143,7 +158,7 @@ def build_bsf_geometry_help_snapshot(
             sink_depth = geom.sink_depth
             material_removal = geom.material_removal
             programmed_target = geom.programmed_measurement_face_z
-            pos = compute_heule_process_positions(
+            heule_pos = compute_heule_process_positions(
                 exit_edge_z=exit_z,
                 entry_edge_z=entry_z,
                 target_surface_z=target_z,
@@ -153,13 +168,20 @@ def build_bsf_geometry_help_snapshot(
                 entry_clearance_mm=entry_clearance if entry_clearance is not None else 1.0,
                 full_cut_overlap_mm=overlap if overlap is not None else 0.25,
             )
-            a_z = pos.a_measurement_face_z
-            x_z = pos.x_measurement_face_z
-            b_z = pos.b_measurement_face_z
-            c_z = pos.c_measurement_face_z
-            d_z = pos.d_measurement_face_z
+            a_z = heule_pos.a_measurement_face_z
+            x_z = heule_pos.x_measurement_face_z
+            b_z = heule_pos.b_measurement_face_z
+            c_z = heule_pos.c_measurement_face_z
+            d_z = heule_pos.d_measurement_face_z
         except ValueError as exc:
             notes.append(str(exc))
+
+    required = required_bsf_safe_z(heule_pos) if heule_pos is not None else None
+    safe_eval = evaluate_bsf_safe_z_status(
+        heule_pos=heule_pos,
+        safe_z=safe_z,
+        end_safe_z=end_safe_z,
+    )
 
     nc_blocked = (
         entry_z is None
@@ -185,6 +207,14 @@ def build_bsf_geometry_help_snapshot(
         d_z=d_z,
         nc_blocked=nc_blocked,
         notes=notes,
+        safe_z=safe_z,
+        end_safe_z=end_safe_z,
+        required_safe_z=required,
+        safe_status=safe_eval.status,
+        safe_headline=safe_eval.headline,
+        x_safety_clearance=x_safety,
+        entry_clearance=entry_clearance,
+        full_cut_overlap=overlap,
     )
 
 

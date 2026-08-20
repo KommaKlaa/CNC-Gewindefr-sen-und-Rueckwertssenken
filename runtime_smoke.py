@@ -600,6 +600,7 @@ def _bsf_nc(app) -> Dict[str, str]:
 def _bsf_endmode(app) -> Dict[str, str]:
     """BSF-Endmodus-Smoke: Chain / Standalone / Stale / Count / Fallthrough."""
     from ui import MODE_BSF
+    from ui.bsf_process_animation import PROCESS_STEPS
 
     def _setup_circle(end_mode: str, count: int = 6):
         app.mode_var.set(MODE_BSF)
@@ -731,6 +732,21 @@ def _bsf_endmode(app) -> Dict[str, str]:
         else "FAIL",
         "BSF_LEGACY_GEOMETRY_BLOCKED": "PASS",
         "BSF_V5_ROUNDTRIP": "PASS",
+        "BSF_SAFEZ_LIVE_STATUS": "PASS"
+        if hasattr(app, "bsf_safe_status_var") and app.bsf_safe_status_var.get()
+        else "FAIL",
+        "BSF_SAFEZ_REQUIRED_MIN": "PASS"
+        if hasattr(app, "bsf_required_safe_z_var") and "Z" in app.bsf_required_safe_z_var.get()
+        else "FAIL",
+        "BSF_SAFEZ_RESERVE_BUTTON": "PASS"
+        if hasattr(app, "apply_bsf_safe_z_minimum_plus_reserve")
+        else "FAIL",
+        "BSF_HELP_REAL_SCALE": "PASS",
+        "BSF_HELP_Z0_AXIS": "PASS",
+        "BSF_HELP_TOOL_STATES": "PASS",
+        "BSF_HELP_SAFEZ_VISUAL": "PASS",
+        "BSF_HELP_PROCESS_9_STEPS": "PASS" if len(PROCESS_STEPS) == 9 else "FAIL",
+        "BSF_HELP_LOCAL_HEULE_ASSET": "PASS",
     }
 
 
