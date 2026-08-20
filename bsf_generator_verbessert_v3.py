@@ -1322,9 +1322,18 @@ class BSFGeneratorGUI:
         return self.build_bsf_preview_snapshot()
 
     def build_bsf_preview_snapshot(self):
-        """Snapshot fuer HEULE BSF – aendert keine Projekt-/NC-Daten."""
+        """Snapshot fuer HEULE BSF – aendert keine Projekt-/NC-Daten.
+
+        Z-Geometrie kommt aus denselben Domain-Helpern wie refresh_bsf_geometry_summary.
+        """
         from preview.bgf_preview_model import PreviewSnapshot, build_bsf_preview_from_xy
         from coordinates.circle_positions import compute_circle_xy_positions
+        from bsf_workpiece_geometry import (
+            build_workpiece_geometry,
+            compute_heule_process_positions,
+            parse_optional_finite_mm,
+        )
+        from ui.bsf_safe_status import STATUS_OK, evaluate_bsf_safe_z_status
 
         def _silent_float(key: str) -> Optional[float]:
             try:
@@ -1338,20 +1347,121 @@ class BSFGeneratorGUI:
             except (KeyError, ValueError):
                 return None
 
+        def _entry_text(key: str) -> str:
+            return self.entries[key].get() if key in self.entries else ""
+
         program_name = clean_program_name(self.entries["program_name"].get(), "BSF_RUECKWAERTS")
         tool_num = _silent_int("tool_num") or 0
         safe_z = _silent_float("safe_z")
         end_safe_z = _silent_float("end_safe_z")
-        if safe_z is None or end_safe_z is None:
+        if safe_z is None:
             safe_z = 0.0
+        if end_safe_z is None:
             end_safe_z = 0.0
 
-        bund = None
-        sink = None
-        clearance = None
-        reference_z = 0.0
         tool_profile = self.get_selected_bsf_tool_profile(show_error=False)
         tool_ok = tool_profile is not None
+        tool_designation = tool_profile.designation if tool_profile is not None else ""
+        hs_mm = (
+            float(tool_profile.measurement_face_to_cutting_edge_mm)
+            if tool_profile is not None
+            else None
+        )
+        al_mm = (
+            float(tool_profile.deployment_length_al_mm)
+            if tool_profile is not None and tool_profile.deployment_length_al_mm is not None
+            else None
+        )
+        activation_rpm = tool_profile.activation_speed_rpm if tool_profile is not None else None
+
+        try:
+            end_mode = self.get_bsf_end_mode()
+            end_mode_label = bsf_end_mode_label(end_mode)
+        except Exception:
+            end_mode_label = ""
+
+        reserve_mm: Optional[float] = None
+        if hasattr(self, "bsf_safe_reserve_var"):
+            try:
+                reserve_mm = parse_optional_finite_mm(self.bsf_safe_reserve_var.get())
+            except ValueError:
+                reserve_mm = None
+
+        missing: List[str] = []
+        try:
+            ent_z = parse_optional_finite_mm(_entry_text("entry_edge_z"))
+            ext_z = parse_optional_finite_mm(_entry_text("exit_edge_z"))
+            tgt_z = parse_optional_finite_mm(_entry_text("target_surface_z"))
+            raw_z = parse_optional_finite_mm(_entry_text("raw_surface_z"))
+            xsf_z = parse_optional_finite_mm(_entry_text("x_safety_clearance"))
+            ecf_z = parse_optional_finite_mm(_entry_text("entry_clearance"))
+            fco_val = parse_optional_finite_mm(_entry_text("full_cut_overlap_mm"))
+        except ValueError:
+            ent_z = ext_z = tgt_z = raw_z = xsf_z = ecf_z = fco_val = None
+            missing.append("ungueltige Zahlenwerte")
+
+        if ent_z is None:
+            missing.append("Bohrungs-Eintrittskante Z")
+        if ext_z is None:
+            missing.append("Bohrungs-Austrittskante / Senkseite Z")
+        if tgt_z is None:
+            missing.append("Ziel-Senkflaeche Z")
+        if not tool_ok:
+            missing.append("HEULE-Werkzeug")
+        if xsf_z is None:
+            missing.append("Ausklapp-Sicherheitsabstand")
+        if ecf_z is None:
+            missing.append("Sicherheitsabstand vor Bohrung")
+        if al_mm is None and tool_ok:
+            missing.append("AL (Ausklapplaenge)")
+
+        geom = None
+        heule_pos = None
+        geometry_error: Optional[str] = None
+        if (
+            ent_z is not None
+            and ext_z is not None
+            and tgt_z is not None
+            and tool_profile is not None
+            and hs_mm is not None
+        ):
+            try:
+                geom = build_workpiece_geometry(
+                    entry_edge_z=ent_z,
+                    exit_edge_z=ext_z,
+                    target_surface_z=tgt_z,
+                    raw_surface_z=raw_z,
+                    measurement_face_to_cutting_edge_mm=hs_mm,
+                )
+                if xsf_z is not None and ecf_z is not None and al_mm is not None:
+                    heule_pos = compute_heule_process_positions(
+                        exit_edge_z=ext_z,
+                        entry_edge_z=ent_z,
+                        target_surface_z=tgt_z,
+                        measurement_face_to_cutting_edge_mm=hs_mm,
+                        deployment_length_al_mm=al_mm,
+                        x_safety_clearance_mm=xsf_z,
+                        entry_clearance_mm=ecf_z,
+                        full_cut_overlap_mm=fco_val if fco_val is not None else 0.25,
+                        raw_surface_z=raw_z,
+                    )
+                else:
+                    geometry_error = "Prozessparameter unvollstaendig"
+            except ValueError as exc:
+                geometry_error = str(exc)
+                missing.append(geometry_error)
+
+        geometry_complete = geom is not None and heule_pos is not None and geometry_error is None
+        safe_eval = evaluate_bsf_safe_z_status(
+            heule_pos=heule_pos,
+            safe_z=safe_z,
+            end_safe_z=end_safe_z,
+        )
+        safe_ok = safe_eval.status == STATUS_OK
+        if geometry_complete and safe_ok:
+            safe_status_text = "NC freigegeben"
+        else:
+            safe_status_text = "NC nicht freigegeben"
 
         mode = self.get_position_mode()
         mode_label = self.position_mode_var.get()
@@ -1395,7 +1505,36 @@ class BSFGeneratorGUI:
         list_ok = True
         if mode == PositionMode.COORDINATES and not positions:
             list_ok = False
-        nc_allowed = bool(tool_ok and list_ok and positions)
+        nc_allowed = bool(tool_ok and list_ok and positions and geometry_complete and safe_ok)
+
+        common_kwargs = dict(
+            entry_edge_z=ent_z,
+            exit_edge_z=ext_z,
+            raw_surface_z=raw_z,
+            target_surface_z=tgt_z,
+            process_surface_z=None if heule_pos is None else heule_pos.process_surface_z,
+            process_surface_source=None if heule_pos is None else heule_pos.process_surface_source,
+            sink_depth=None if geom is None else geom.sink_depth,
+            material_removal=None if geom is None else geom.material_removal,
+            a_measurement_face_z=None if heule_pos is None else heule_pos.a_measurement_face_z,
+            x_measurement_face_z=None if heule_pos is None else heule_pos.x_measurement_face_z,
+            b_measurement_face_z=None if heule_pos is None else heule_pos.b_measurement_face_z,
+            c_measurement_face_z=None if heule_pos is None else heule_pos.c_measurement_face_z,
+            d_measurement_face_z=None if heule_pos is None else heule_pos.d_measurement_face_z,
+            target_cutting_edge_z=None if geom is None else geom.target_surface_z,
+            hs_mm=hs_mm,
+            al_mm=al_mm,
+            activation_speed_rpm=activation_rpm,
+            required_safe_z=safe_eval.required_safe_z,
+            safe_reserve_mm=reserve_mm,
+            safe_status=safe_status_text,
+            safe_status_code=safe_eval.status,
+            geometry_complete=geometry_complete,
+            geometry_missing=missing,
+            end_mode=end_mode_label,
+            tool_designation=tool_designation,
+            measurement_face_to_edge_mm=hs_mm,
+        )
 
         if not positions:
             return PreviewSnapshot(
@@ -1409,14 +1548,34 @@ class BSFGeneratorGUI:
                 safe_z=safe_z,
                 end_safe_z=end_safe_z,
                 process_kind="BSF",
-                bsf_bund_thickness=bund,
-                bsf_sink_depth=sink,
-                bsf_clearance=clearance,
-                bsf_tool_designation=tool_profile.designation if tool_profile is not None else "",
-                bsf_measurement_face_to_edge_mm=tool_profile.measurement_face_to_cutting_edge_mm if tool_profile is not None else None,
-                bsf_reference_z=reference_z,
                 circle_info=circle_info,
                 nc_allowed=False,
+                bsf_tool_designation=tool_designation,
+                bsf_measurement_face_to_edge_mm=hs_mm,
+                bsf_entry_edge_z=ent_z,
+                bsf_exit_edge_z=ext_z,
+                bsf_raw_surface_z=raw_z,
+                bsf_target_surface_z=tgt_z,
+                bsf_process_surface_z=common_kwargs["process_surface_z"],
+                bsf_process_surface_source=common_kwargs["process_surface_source"],
+                bsf_sink_depth=common_kwargs["sink_depth"],
+                bsf_material_removal=common_kwargs["material_removal"],
+                bsf_a_measurement_face_z=common_kwargs["a_measurement_face_z"],
+                bsf_x_measurement_face_z=common_kwargs["x_measurement_face_z"],
+                bsf_b_measurement_face_z=common_kwargs["b_measurement_face_z"],
+                bsf_c_measurement_face_z=common_kwargs["c_measurement_face_z"],
+                bsf_d_measurement_face_z=common_kwargs["d_measurement_face_z"],
+                bsf_target_cutting_edge_z=common_kwargs["target_cutting_edge_z"],
+                bsf_hs_mm=hs_mm,
+                bsf_al_mm=al_mm,
+                bsf_activation_speed_rpm=activation_rpm,
+                bsf_required_safe_z=safe_eval.required_safe_z,
+                bsf_safe_reserve_mm=reserve_mm,
+                bsf_safe_status=safe_status_text,
+                bsf_safe_status_code=safe_eval.status,
+                bsf_geometry_complete=geometry_complete,
+                bsf_geometry_missing=list(missing),
+                bsf_end_mode=end_mode_label,
             )
 
         return build_bsf_preview_from_xy(
@@ -1427,13 +1586,8 @@ class BSFGeneratorGUI:
             program_name=program_name,
             safe_z=safe_z,
             end_safe_z=end_safe_z,
-            bund_thickness=bund,
-            sink_depth=sink,
-            clearance=clearance,
-            tool_designation=tool_profile.designation if tool_profile is not None else "",
-            measurement_face_to_edge_mm=tool_profile.measurement_face_to_cutting_edge_mm if tool_profile is not None else None,
             circle_info=circle_info,
-            reference_z=reference_z,
+            **common_kwargs,
         )
 
     def build_bgf_preview_snapshot(self):

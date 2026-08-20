@@ -56,12 +56,37 @@ class PreviewSnapshot:
     warnings: List[str] = field(default_factory=list)
     circle_info: Optional[str] = None
     process_kind: str = "BGF"  # "BGF" | "BSF"
+    # Legacy BSF-Bezugsebenenfelder (nicht mehr Anzeigequelle)
     bsf_bund_thickness: Optional[float] = None
-    bsf_sink_depth: Optional[float] = None
     bsf_clearance: Optional[float] = None
+    bsf_reference_z: Optional[float] = None
     bsf_tool_designation: str = ""
     bsf_measurement_face_to_edge_mm: Optional[float] = None
-    bsf_reference_z: Optional[float] = None
+    # Aktuelles direktes Z0-/RawRef-Modell
+    bsf_entry_edge_z: Optional[float] = None
+    bsf_exit_edge_z: Optional[float] = None
+    bsf_raw_surface_z: Optional[float] = None
+    bsf_target_surface_z: Optional[float] = None
+    bsf_process_surface_z: Optional[float] = None
+    bsf_process_surface_source: Optional[str] = None
+    bsf_sink_depth: Optional[float] = None
+    bsf_material_removal: Optional[float] = None
+    bsf_a_measurement_face_z: Optional[float] = None
+    bsf_x_measurement_face_z: Optional[float] = None
+    bsf_b_measurement_face_z: Optional[float] = None
+    bsf_c_measurement_face_z: Optional[float] = None
+    bsf_d_measurement_face_z: Optional[float] = None
+    bsf_target_cutting_edge_z: Optional[float] = None
+    bsf_hs_mm: Optional[float] = None
+    bsf_al_mm: Optional[float] = None
+    bsf_activation_speed_rpm: Optional[int] = None
+    bsf_required_safe_z: Optional[float] = None
+    bsf_safe_reserve_mm: Optional[float] = None
+    bsf_safe_status: str = ""
+    bsf_safe_status_code: str = ""
+    bsf_geometry_complete: bool = False
+    bsf_geometry_missing: List[str] = field(default_factory=list)
+    bsf_end_mode: str = ""
 
 
 def _marker_for(*, depth_ok: bool, safe_ok: bool, is_dup: bool) -> str:
@@ -223,16 +248,36 @@ def build_bsf_preview_from_xy(
     program_name: str,
     safe_z: float,
     end_safe_z: float,
-    bund_thickness: Optional[float] = None,
-    sink_depth: Optional[float] = None,
-    clearance: Optional[float] = None,
     tool_designation: str = "",
     measurement_face_to_edge_mm: Optional[float] = None,
     circle_info: Optional[str] = None,
     extra_warnings: Optional[List[str]] = None,
-    reference_z: Optional[float] = None,
+    entry_edge_z: Optional[float] = None,
+    exit_edge_z: Optional[float] = None,
+    raw_surface_z: Optional[float] = None,
+    target_surface_z: Optional[float] = None,
+    process_surface_z: Optional[float] = None,
+    process_surface_source: Optional[str] = None,
+    sink_depth: Optional[float] = None,
+    material_removal: Optional[float] = None,
+    a_measurement_face_z: Optional[float] = None,
+    x_measurement_face_z: Optional[float] = None,
+    b_measurement_face_z: Optional[float] = None,
+    c_measurement_face_z: Optional[float] = None,
+    d_measurement_face_z: Optional[float] = None,
+    target_cutting_edge_z: Optional[float] = None,
+    hs_mm: Optional[float] = None,
+    al_mm: Optional[float] = None,
+    activation_speed_rpm: Optional[int] = None,
+    required_safe_z: Optional[float] = None,
+    safe_reserve_mm: Optional[float] = None,
+    safe_status: str = "",
+    safe_status_code: str = "",
+    geometry_complete: bool = False,
+    geometry_missing: Optional[List[str]] = None,
+    end_mode: str = "",
 ) -> PreviewSnapshot:
-    """Read-only Preview fuer HEULE BSF (X/Y, keine BGF-Tiefen)."""
+    """Read-only Preview fuer HEULE BSF (X/Y + kanonische Z0-Geometrie)."""
     from coordinates.model import XYCoordinate
     from coordinates.validation import find_duplicate_xy, validate_coordinates
 
@@ -271,7 +316,7 @@ def build_bsf_preview_from_xy(
         elif ok_point:
             status_label = "OK"
         else:
-            status_label = "NC blockiert"
+            status_label = "NC nicht freigegeben"
         points.append(
             PreviewPoint(
                 index=idx,
@@ -306,10 +351,30 @@ def build_bsf_preview_from_xy(
         warnings=warnings,
         circle_info=circle_info,
         process_kind="BSF",
-        bsf_bund_thickness=bund_thickness,
-        bsf_sink_depth=sink_depth,
-        bsf_clearance=clearance,
         bsf_tool_designation=tool_designation,
         bsf_measurement_face_to_edge_mm=measurement_face_to_edge_mm,
-        bsf_reference_z=reference_z,
+        bsf_entry_edge_z=entry_edge_z,
+        bsf_exit_edge_z=exit_edge_z,
+        bsf_raw_surface_z=raw_surface_z,
+        bsf_target_surface_z=target_surface_z,
+        bsf_process_surface_z=process_surface_z,
+        bsf_process_surface_source=process_surface_source,
+        bsf_sink_depth=sink_depth,
+        bsf_material_removal=material_removal,
+        bsf_a_measurement_face_z=a_measurement_face_z,
+        bsf_x_measurement_face_z=x_measurement_face_z,
+        bsf_b_measurement_face_z=b_measurement_face_z,
+        bsf_c_measurement_face_z=c_measurement_face_z,
+        bsf_d_measurement_face_z=d_measurement_face_z,
+        bsf_target_cutting_edge_z=target_cutting_edge_z,
+        bsf_hs_mm=hs_mm,
+        bsf_al_mm=al_mm,
+        bsf_activation_speed_rpm=activation_speed_rpm,
+        bsf_required_safe_z=required_safe_z,
+        bsf_safe_reserve_mm=safe_reserve_mm,
+        bsf_safe_status=safe_status,
+        bsf_safe_status_code=safe_status_code,
+        bsf_geometry_complete=geometry_complete,
+        bsf_geometry_missing=list(geometry_missing or []),
+        bsf_end_mode=end_mode,
     )

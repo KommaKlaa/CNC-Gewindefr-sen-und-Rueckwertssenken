@@ -248,7 +248,10 @@ class BGFPreviewWindow:
         if s.nc_allowed:
             self.header_nc.config(text="NC-STATUS: FREIGEGEBEN", foreground=_COLOR_OK)
         else:
-            msg = "NC-STATUS: BLOCKIERT"
+            if s.process_kind == "BSF":
+                msg = "NC-STATUS: NICHT FREIGEGEBEN"
+            else:
+                msg = "NC-STATUS: BLOCKIERT"
             if s.blocked_count:
                 msg += f"    {s.blocked_count} problematische Positionen"
             self.header_nc.config(text=msg, foreground=_COLOR_BLOCK)
@@ -480,29 +483,138 @@ class BGFPreviewWindow:
 
     def _format_bsf_point_detail(self, p: PreviewPoint) -> str:
         s = self.snapshot
-        bund = "—" if s is None or s.bsf_bund_thickness is None else f"{s.bsf_bund_thickness:.3f} mm"
-        sink = "—" if s is None or s.bsf_sink_depth is None else f"{s.bsf_sink_depth:.3f} mm"
-        clr = "—" if s is None or s.bsf_clearance is None else f"{s.bsf_clearance:.3f} mm"
-        tool = "—" if s is None or not s.bsf_tool_designation else s.bsf_tool_designation
-        offset = "—" if s is None or s.bsf_measurement_face_to_edge_mm is None else f"{s.bsf_measurement_face_to_edge_mm:.3f} mm"
-        nc = "NC freigegeben" if p.ok_for_nc else "NC blockiert"
+        if s is None:
+            return f"Position {p.index}\n\nX: {_fmt3(p.x)} mm\nY: {_fmt3(p.y)} mm"
+
+        def _z(v: Optional[float]) -> str:
+            if v is None:
+                return "—"
+            return f"Z{v:+.3f}"
+
+        def _mm(v: Optional[float]) -> str:
+            if v is None:
+                return "—"
+            return f"{v:.3f} mm"
+
         ov = f"\nXY-Ueberlappung: {p.xy_overlap_count} Positionen" if p.xy_overlap_count > 1 else ""
         dup = "\nDoppelte XY-Position: ja" if p.is_duplicate_xyz else ""
-        return (
-            f"Position {p.index}\n\n"
-            f"X: {_fmt3(p.x)} mm\n"
-            f"Y: {_fmt3(p.y)} mm\n\n"
-            f"BSF:\n"
-            f"Werkzeug: {tool}\n"
-            f"Bunddicke: {bund}\n"
-            f"Senk-Fertigmaß: {sink}\n"
-            f"Freifahrtiefe: {clr}\n"
-            f"Bezug Z: {'—' if s is None or s.bsf_reference_z is None else f'{s.bsf_reference_z:.3f} mm'}\n"
-            f"Vermessung: Werkzeug-Stirnfläche\n"
-            f"Vermessfläche -> Schneide: {offset}\n\n"
-            f"Status:\n{nc}"
-            f"{dup}{ov}"
+
+        lines = [
+            f"Position {p.index}",
+            "",
+            f"X: {_fmt3(p.x)} mm",
+            f"Y: {_fmt3(p.y)} mm",
+            "",
+        ]
+
+        if not s.bsf_geometry_complete:
+            lines.append("WERKSTUECK / Z-GEOMETRIE")
+            lines.append("BSF-Z-Geometrie unvollstaendig")
+            if s.bsf_geometry_missing:
+                lines.append("Fehlend: " + ", ".join(s.bsf_geometry_missing))
+            lines.append("")
+            lines.append("SICHERHEIT")
+            lines.append(f"Sicherheits-Z: {_z(s.safe_z)}")
+            lines.append(f"End-Sicherheits-Z: {_z(s.end_safe_z)}")
+            lines.append(f"Mindest-Sicherheits-Z: {_z(s.bsf_required_safe_z)}")
+            lines.append(f"Reserve: {_mm(s.bsf_safe_reserve_mm)}")
+            lines.append(f"Status: {s.bsf_safe_status or 'NC nicht freigegeben'}")
+            lines.append(dup + ov)
+            return "\n".join(lines)
+
+        raw_txt = (
+            "nicht angegeben"
+            if s.bsf_raw_surface_z is None
+            else _z(s.bsf_raw_surface_z)
         )
+        from bsf_workpiece_geometry import PROCESS_SURFACE_RAW
+
+        if s.bsf_process_surface_source == PROCESS_SURFACE_RAW:
+            process_label = f"Rohflaeche / Ist-Z {_z(s.bsf_process_surface_z)}"
+        elif s.bsf_process_surface_z is not None:
+            process_label = f"Austrittskante {_z(s.bsf_process_surface_z)}"
+        else:
+            process_label = "—"
+
+        material = (
+            "—"
+            if s.bsf_material_removal is None
+            else f"{s.bsf_material_removal:.3f} mm"
+        )
+        tool = s.bsf_tool_designation or "—"
+        rpm = (
+            "—"
+            if s.bsf_activation_speed_rpm is None
+            else f"{s.bsf_activation_speed_rpm:d} U/min"
+        )
+
+        lines.extend(
+            [
+                "WERKSTUECK / Z-GEOMETRIE",
+                "",
+                "Werkstuecknullpunkt:",
+                "Z0.000",
+                "",
+                "Bohrungs-Eintrittskante:",
+                _z(s.bsf_entry_edge_z),
+                "",
+                "Bohrungs-Austrittskante / Senkseite:",
+                _z(s.bsf_exit_edge_z),
+                "",
+                "Rohflaeche / Ist-Z:",
+                raw_txt,
+                "",
+                "Ziel-Senkflaeche:",
+                _z(s.bsf_target_surface_z),
+                "",
+                "X/B/C Bezugsflaeche:",
+                process_label,
+                "",
+                "Senktiefe:",
+                _mm(s.bsf_sink_depth),
+                "",
+                "Materialabtrag:",
+                material,
+                "",
+                "PROZESSPOSITIONEN",
+                "",
+                "Sicherheitsposition vor Bohrung:",
+                _z(s.bsf_a_measurement_face_z),
+                "",
+                "Freifahrposition zum Messer-Ausklappen:",
+                _z(s.bsf_x_measurement_face_z),
+                "",
+                "Anfahrposition vor Senkflaeche:",
+                _z(s.bsf_b_measurement_face_z),
+                "",
+                "Schnittbeginn:",
+                _z(s.bsf_c_measurement_face_z),
+                "",
+                "Fertigposition Senkung:",
+                _z(s.bsf_d_measurement_face_z),
+                "",
+                "Zielposition reale Schneide:",
+                _z(s.bsf_target_cutting_edge_z),
+                "",
+                "WERKZEUG",
+                "",
+                f"Werkzeug: {tool}",
+                "Vermessung: Werkzeug-Stirnflaeche",
+                f"Hs: {_mm(s.bsf_hs_mm)}",
+                f"AL: {_mm(s.bsf_al_mm)}",
+                f"Aktivierungsdrehzahl: {rpm}",
+                "",
+                "SICHERHEIT",
+                "",
+                f"Sicherheits-Z: {_z(s.safe_z)}",
+                f"End-Sicherheits-Z: {_z(s.end_safe_z)}",
+                f"Mindest-Sicherheits-Z: {_z(s.bsf_required_safe_z)}",
+                f"Reserve: {_mm(s.bsf_safe_reserve_mm)}",
+                f"Status: {s.bsf_safe_status or ('NC freigegeben' if p.ok_for_nc else 'NC nicht freigegeben')}",
+            ]
+        )
+        lines.append(dup + ov)
+        return "\n".join(lines)
 
 
 def open_bgf_preview(master: tk.Misc, snapshot_provider: Callable[[], PreviewSnapshot]) -> BGFPreviewWindow:
