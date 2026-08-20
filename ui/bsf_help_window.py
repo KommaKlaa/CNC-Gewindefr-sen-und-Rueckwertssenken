@@ -31,6 +31,7 @@ class BSFHelpWindow:
         self._image_src = None
         self._img = None
         self._animator: Optional[BSFProcessAnimator] = None
+        self._z0_example_index = 0
         self._build_ui()
         self.refresh()
         self.win.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -114,6 +115,9 @@ class BSFHelpWindow:
         ttk.Button(row, text="Play/Pause", command=lambda: self._animator.toggle_play()).pack(side=tk.LEFT, padx=2)
         ttk.Button(row, text="Weiter >", command=lambda: self._animator.next()).pack(side=tk.LEFT, padx=2)
         ttk.Button(row, text="Ende >|", command=lambda: self._animator.last()).pack(side=tk.LEFT, padx=2)
+        ttk.Button(row, text="Z0-Beispiel wechseln", command=self._cycle_z0_example).pack(side=tk.LEFT, padx=12)
+        self._z0_example_var = tk.StringVar(value="Z0 obere Flaeche")
+        ttk.Label(row, textvariable=self._z0_example_var).pack(side=tk.LEFT, padx=4)
         self._animator = BSFProcessAnimator(self.proc_canvas, self.step_var, on_redraw=self._draw_process_step)
 
     def refresh(self) -> None:
@@ -177,7 +181,18 @@ class BSFHelpWindow:
             return
         draw_bsf_geometry(self.geom_canvas, self.snapshot)
 
+    def _cycle_z0_example(self) -> None:
+        from help_views.bsf_geometry_model import Z0_EXAMPLES
+
+        self._z0_example_index = (self._z0_example_index + 1) % len(Z0_EXAMPLES)
+        if self._animator is not None:
+            self._animator._update()
+
     def _draw_process_step(self, step_index: int) -> None:
+        from help_views.bsf_geometry_model import Z0_EXAMPLES, fmt_axis_z
+        from bsf_workpiece_geometry import compute_heule_process_positions
+        from heule_bsf_tools import BSF_TOOL_PROFILES
+
         c = self.proc_canvas
         c.delete("all")
         w = max(240, int(c.winfo_width()))
@@ -186,12 +201,34 @@ class BSFHelpWindow:
         x_a = int(w * 0.82)
         x_x = int(w * 0.34)
         x_d = int(w * 0.62)
+        example = Z0_EXAMPLES[self._z0_example_index % len(Z0_EXAMPLES)]
+        if hasattr(self, "_z0_example_var"):
+            self._z0_example_var.set(example["name"])
+        tool = BSF_TOOL_PROFILES["BSF_C_1000_050_10_5_23"]
+        try:
+            pos = compute_heule_process_positions(
+                exit_edge_z=example["exit_edge_z"],
+                entry_edge_z=example["entry_edge_z"],
+                target_surface_z=example["target_surface_z"],
+                measurement_face_to_cutting_edge_mm=tool.measurement_face_to_cutting_edge_mm,
+                deployment_length_al_mm=tool.deployment_length_al_mm,
+                x_safety_clearance_mm=2.0,
+                entry_clearance_mm=1.0,
+            )
+            labels = (
+                f"A {fmt_axis_z(pos.a_measurement_face_z)}  "
+                f"X {fmt_axis_z(pos.x_measurement_face_z)}  "
+                f"D {fmt_axis_z(pos.d_measurement_face_z)}"
+            )
+        except ValueError:
+            labels = "A/X/D —"
+        c.create_line(20, y, w - 20, y, fill="#667788", dash=(3, 3))
+        c.create_text(w - 16, y - 16, anchor="e", text="Z0")
         c.create_rectangle(int(w * 0.28), y - 30, int(w * 0.72), y + 30, fill="#d0d7de", outline="#57606a")
         c.create_rectangle(int(w * 0.45), y - 20, int(w * 0.55), y + 20, fill="#f6f8fa", outline="#57606a")
         c.create_text(x_a, y - 42, text="A")
         c.create_text(x_x, y - 42, text="X")
         c.create_text(x_d, y + 42, text="D")
-        # Werkzeug rechts
         x_tool = x_a
         if step_index in (1, 2, 3):
             x_tool = x_x
@@ -204,6 +241,8 @@ class BSFHelpWindow:
             fill="#57606a", outline="#1f2328",
         )
         c.create_text(14, 14, anchor="w", text="-Z (nach links)  /  +Z (nach rechts)")
+        c.create_text(14, 34, anchor="w", text=f"{example['name']} – Werkstueck/Weg unveraendert, nur Labels")
+        c.create_text(14, h - 18, anchor="w", text=labels)
 
 
 def tool_detail_canvas_layout(canvas_height: float) -> tuple[float, float]:

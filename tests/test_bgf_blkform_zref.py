@@ -24,6 +24,8 @@ TOOL_C = BSF_TOOL_PROFILES["BSF_C_1000_050_10_5_23"]
 
 
 def _set(app, key: str, value) -> None:
+    if key not in app.entries:
+        return
     app.entries[key].delete(0, tk.END)
     app.entries[key].insert(0, str(value))
 
@@ -331,11 +333,11 @@ class TestBlkFormZref(unittest.TestCase):
         _set(app, "bsf_reference_z", "0")
         # FAIL-CLOSED: Pflichtparameter setzen
         for k, v in [
-            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
+            
             ("safe_z", "100"), ("end_safe_z", "200"),
             ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.5"),
             ("single_x", "0"), ("single_y", "0"),
-            ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+            ("entry_edge_z", "20"), ("exit_edge_z", "-5"), ("target_surface_z", "38"),
             ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
             ("full_cut_overlap_mm", "0.250"),
         ]:
@@ -368,12 +370,8 @@ class TestBlkFormZref(unittest.TestCase):
             tool_number=8,
             blank_size=1000.0,
             blank_height=60.0,
-            z_reference="BOTTOM_EDGE",
-            tool_profile_key=TOOL_C.key,
-            bund_thickness=18.0,
-            sink_finish=38.0,
-            clearance=23.0,
-            spindle_speed=1500,
+                tool_profile_key=TOOL_C.key,
+                        spindle_speed=1500,
             feed=120.0,
             dwell_time=1.5,
             reduce_approach=True,
@@ -385,7 +383,9 @@ class TestBlkFormZref(unittest.TestCase):
             safe_z=100.0,
             end_safe_z=200.0,
             positions=[BSFCoordinatePosition(0, 0)],
-            reference_z=20.0,
+            entry_edge_z=20.0,
+            exit_edge_z=-5.0,
+            target_surface_z=38.0,
             raw_stock_top_z=12.5,
         )
         payload = document_to_dict(doc)
@@ -393,7 +393,7 @@ class TestBlkFormZref(unittest.TestCase):
         del payload["program"]["raw_stock_top_z"]
         loaded = parse_document_dict(payload)
         self.assertEqual(loaded.raw_stock_top_z, 0.0)
-        self.assertEqual(loaded.reference_z, 20.0)
+        self.assertIsNone(loaded.reference_z)
 
     def test_csv_does_not_store_or_change_raw_stock_top_z(self):
         app = self.app

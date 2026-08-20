@@ -35,7 +35,7 @@ class TestUi1Visibility(unittest.TestCase):
         self.assertFalse(is_mapped(app.bsf_processing_frame))
         self.assertFalse(is_mapped(app.bsf_machine_frame))
         # BSF-spezifische Entries existieren, liegen aber in ausgeblendeten Frames
-        self.assertIn("bund_thickness", app.entries)
+        self.assertIn("entry_edge_z", app.entries)
         self.assertFalse(is_mapped(app.bsf_processing_frame))
 
     def test_bsf_hides_bgf_fields(self):
@@ -221,10 +221,10 @@ class TestUi1NcRegression(unittest.TestCase):
         app.on_bsf_tool_profile_change()
         # FAIL-CLOSED: Pflichtparameter setzen
         for k, v in [
-            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
-            ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
+            
+            ("safe_z", "100"), ("end_safe_z", "200"),
             ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.5"),
-            ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+            ("entry_edge_z", "20"), ("exit_edge_z", "-5"), ("target_surface_z", "38"),
             ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
             ("full_cut_overlap_mm", "0.250"),
         ]:

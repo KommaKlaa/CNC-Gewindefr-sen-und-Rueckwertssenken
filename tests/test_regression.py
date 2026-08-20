@@ -115,12 +115,12 @@ class TestGuiModesRegression(unittest.TestCase):
             ("clearance", "23"),
             ("safe_z", "100"),
             ("end_safe_z", "200"),
-            ("bsf_reference_z", "0"),
+            
             ("spindle_speed", "800"),
             ("feed_rate", "60"),
             ("dwell_time", "1.5"),
             # dep_z=-5: X=-27.25, B=-14.55, C=-13.3, D=29.45 -> OK
-            ("deployment_edge_z", "-5"),
+            ("exit_edge_z", "-5"), ("target_surface_z", "38"),
             ("entry_edge_z", "20"),
             ("x_safety_clearance", "2.000"),
             ("entry_clearance", "1.000"),

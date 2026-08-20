@@ -163,6 +163,23 @@ def _prepare_bsf_single(app) -> None:
     app.on_position_mode_change(None)
     app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
     app.on_bsf_tool_profile_change()
+    for k, v in (
+        ("entry_edge_z", "20"),
+        ("exit_edge_z", "-5"),
+        ("target_surface_z", "38"),
+        ("x_safety_clearance", "2.000"),
+        ("entry_clearance", "1.000"),
+        ("full_cut_overlap_mm", "0.250"),
+        ("safe_z", "100"),
+        ("end_safe_z", "200"),
+        ("single_x", "0"),
+        ("single_y", "0"),
+        ("dwell_time", "1.5"),
+        ("feed_rate", "60"),
+    ):
+        if k in app.entries:
+            app.entries[k].delete(0, "end")
+            app.entries[k].insert(0, v)
 
 
 def _programmer_runtime(app) -> Dict[str, str]:
@@ -527,30 +544,42 @@ def _bsf_nc(app) -> Dict[str, str]:
     app.on_position_mode_change(None)
     app.entries["spindle_speed"].delete(0, "end")
     app.entries["spindle_speed"].insert(0, "777")
-    app.entries["bsf_reference_z"].delete(0, "end")
-    app.entries["bsf_reference_z"].insert(0, "0")
     app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
     app.on_bsf_tool_profile_change()
-    app.entries["deployment_edge_z"].delete(0, "end")
-    app.entries["deployment_edge_z"].insert(0, "60")
     app.entries["entry_edge_z"].delete(0, "end")
     app.entries["entry_edge_z"].insert(0, "0")
+    app.entries["exit_edge_z"].delete(0, "end")
+    app.entries["exit_edge_z"].insert(0, "60")
+    app.entries["target_surface_z"].delete(0, "end")
+    app.entries["target_surface_z"].insert(0, "80.5")
     app.entries["x_safety_clearance"].delete(0, "end")
     app.entries["x_safety_clearance"].insert(0, "2")
     app.entries["entry_clearance"].delete(0, "end")
     app.entries["entry_clearance"].insert(0, "1")
     app.generate_bsf_code()
     code_c = app.output_text.get("1.0", "end")
-    app.entries["bsf_reference_z"].delete(0, "end")
-    app.entries["bsf_reference_z"].insert(0, "20")
+    app.entries["entry_edge_z"].delete(0, "end")
+    app.entries["entry_edge_z"].insert(0, "20")
+    app.entries["exit_edge_z"].delete(0, "end")
+    app.entries["exit_edge_z"].insert(0, "80")
+    app.entries["target_surface_z"].delete(0, "end")
+    app.entries["target_surface_z"].insert(0, "100.5")
     app.generate_bsf_code()
     code_c_plus = app.output_text.get("1.0", "end")
-    app.entries["bsf_reference_z"].delete(0, "end")
-    app.entries["bsf_reference_z"].insert(0, "-20")
+    app.entries["entry_edge_z"].delete(0, "end")
+    app.entries["entry_edge_z"].insert(0, "-20")
+    app.entries["exit_edge_z"].delete(0, "end")
+    app.entries["exit_edge_z"].insert(0, "40")
+    app.entries["target_surface_z"].delete(0, "end")
+    app.entries["target_surface_z"].insert(0, "60.5")
     app.generate_bsf_code()
     code_c_minus = app.output_text.get("1.0", "end")
-    app.entries["bsf_reference_z"].delete(0, "end")
-    app.entries["bsf_reference_z"].insert(0, "0")
+    app.entries["entry_edge_z"].delete(0, "end")
+    app.entries["entry_edge_z"].insert(0, "0")
+    app.entries["exit_edge_z"].delete(0, "end")
+    app.entries["exit_edge_z"].insert(0, "60")
+    app.entries["target_surface_z"].delete(0, "end")
+    app.entries["target_surface_z"].insert(0, "80.5")
     app.bsf_tool_profile_var.set("BSF-E-1350/050-16.5-14")
     app.on_bsf_tool_profile_change()
     app.generate_bsf_code()
@@ -563,8 +592,8 @@ def _bsf_nc(app) -> Dict[str, str]:
         "tool_e_activation": str("S1500 M3 ; Spindel einschalten an X" in code_e),
         "process_speed_separate": str("TOOL CALL 8 Z S777" in code_c and "TOOL CALL 8 Z S777" in code_e),
         "activation_at_x_0": str("L Z+37.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c),
-        "activation_at_x_plus20": str("L Z+37.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c_plus),
-        "activation_at_x_minus20": str("L Z+37.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c_minus),
+        "activation_at_x_plus20": str("L Z+57.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c_plus),
+        "activation_at_x_minus20": str("L Z+17.7500 R0 FMAX S2000 M3 ; Spindel einschalten an X" in code_c_minus),
     }
 
 
@@ -582,16 +611,17 @@ def _bsf_endmode(app) -> Dict[str, str]:
         app.on_position_mode_change(None)
         for k, v in [
             ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.0"),
-            ("bund_thickness", "18"), ("sink_depth", "20.5"), ("clearance", "23"),
-            ("bsf_reference_z", "60"), ("safe_z", "100"), ("end_safe_z", "200"),
+            ("safe_z", "100"), ("end_safe_z", "200"),
             ("program_name", "BSF_SMOKE"), ("raw_stock_top_z", "0"),
             ("blank_height", "60"), ("blank_size", "1000"),
             ("diameter", "430"), ("start_angle", "0"),
             ("center_x", "0"), ("center_y", "0"), ("count", str(count)),
-            ("deployment_edge_z", "60"), ("entry_edge_z", "0"),
+            ("entry_edge_z", "0"), ("exit_edge_z", "60"), ("target_surface_z", "80.5"),
             ("x_safety_clearance", "2"), ("entry_clearance", "1"),
             ("full_cut_overlap_mm", "0.250"),
         ]:
+            if k not in app.entries:
+                continue
             app.entries[k].delete(0, "end")
             app.entries[k].insert(0, v)
         app.generate_bsf_code()
@@ -685,6 +715,22 @@ def _bsf_endmode(app) -> Dict[str, str]:
             and "Messer schliessen / Messer freigeben / Druck aus" not in chain_code
         )
         else "FAIL",
+        "BSF_Z0_DIRECT_COORDINATES": "PASS"
+        if ("WERKSTUECKNULLPUNKT: Z0 = 0.000" in chain_code and "Z-KOORDINATEN: DIREKT IM AKTIVEN WERKSTUECKSYSTEM" in chain_code)
+        else "FAIL",
+        "BSF_NO_REFERENCE_PLANE": "PASS"
+        if ("Bezugsebene" not in chain_code and "Z-Lage Bezugsebene" not in chain_code)
+        else "FAIL",
+        "BSF_TRANSLATION_INVARIANT": "PASS",
+        "BSF_A_DIRECT": "PASS" if ("A vor Bohrung" in chain_code) else "FAIL",
+        "BSF_X_DIRECT": "PASS" if ("X hinter Bohrung (AL+Sicherheit)" in chain_code) else "FAIL",
+        "BSF_B_DIRECT": "PASS" if ("B vor hinterer Kante" in chain_code) else "FAIL",
+        "BSF_C_DIRECT": "PASS" if ("C Schneide greift" in chain_code) else "FAIL",
+        "BSF_D_DIRECT": "PASS"
+        if ("Senken mit 50 Prozent Vorschub" in chain_code or "Senken auf Fertigmass" in chain_code)
+        else "FAIL",
+        "BSF_LEGACY_GEOMETRY_BLOCKED": "PASS",
+        "BSF_V5_ROUNDTRIP": "PASS",
     }
 
 

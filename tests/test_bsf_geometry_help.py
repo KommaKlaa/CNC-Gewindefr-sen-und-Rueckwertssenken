@@ -21,11 +21,9 @@ TOOL_E = BSF_TOOL_PROFILES["BSF_E_1350_050_16_5_14"]
 class TestBsfHelpModel(unittest.TestCase):
     def test_tool_c_snapshot(self):
         snap = build_bsf_geometry_help_snapshot(
-            bund_text="18",
-            sink_text="38",
-            clearance_text="23",
-            z0_label="Z0 ist Unterkante Bund",
-            reference_z_text="0",
+            entry_text="20",
+            exit_text="-5",
+            target_text="38",
             tool_designation=TOOL_C.designation,
         )
         self.assertFalse(snap.nc_blocked)
@@ -34,11 +32,9 @@ class TestBsfHelpModel(unittest.TestCase):
 
     def test_tool_e_snapshot(self):
         snap = build_bsf_geometry_help_snapshot(
-            bund_text="18",
-            sink_text="38",
-            clearance_text="23",
-            z0_label="Z0 ist Unterkante Bund",
-            reference_z_text="0",
+            entry_text="20",
+            exit_text="-5",
+            target_text="38",
             tool_designation=TOOL_E.designation,
         )
         self.assertAlmostEqual(snap.programmed_measurement_face_z_sink_finish, 26.6, places=3)
@@ -63,19 +59,17 @@ class TestBsfHelpModel(unittest.TestCase):
     def test_info_text_uses_new_measurement_model(self):
         info = format_help_info(
             build_bsf_geometry_help_snapshot(
-                bund_text="18",
-                sink_text="38",
-                clearance_text="23",
-                z0_label="Z0 ist Unterkante Bund",
-                reference_z_text="20",
+                entry_text="40",
+                exit_text="15",
+                target_text="58",
                 tool_designation=TOOL_C.designation,
             )
         )
         self.assertIn("HEULE Werkzeug", info)
-        self.assertIn("Vermessfläche -> Schneide", info)
+        self.assertIn("Vermessflaeche -> Schneide", info)
         self.assertIn(MEASUREMENT_LABEL, info)
         self.assertIn(MEASUREMENT_OFFSET_DIRECTION, info)
-        self.assertIn("Vermesspunkt-Z Finish", info)
+        self.assertIn("D / Vermesspunkt", info)
         self.assertNotIn("Schwertdicke", info)
         self.assertNotIn("Halter -> Schneide", info)
 
@@ -94,7 +88,7 @@ class TestBsfHelpWindow(unittest.TestCase):
         win = BSFGeometryHelpWindow(root, snapshot_provider=app.build_bsf_geometry_help_snapshot)
         win.win.update_idletasks()
         text = win.info_dump()
-        self.assertIn("Vermessfläche -> Schneide", text)
+        self.assertIn("Vermessflaeche -> Schneide", text)
         self.assertIn("BSF-C-1000/050-10.5-23", text)
         win.win.destroy()
         root.destroy()

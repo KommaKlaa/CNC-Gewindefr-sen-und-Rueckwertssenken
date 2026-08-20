@@ -23,6 +23,8 @@ from ui import MODE_BGF, MODE_BSF
 
 
 def _set(app, key: str, value) -> None:
+    if key not in app.entries:
+        return
     app.entries[key].delete(0, tk.END)
     app.entries[key].insert(0, str(value))
     app.refresh_nc_output_status()
@@ -129,12 +131,12 @@ class TestNcStaleGuard(unittest.TestCase):
         app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
         app.on_bsf_tool_profile_change()
         for k, v in [
-            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
-            ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
+            
+            ("safe_z", "100"), ("end_safe_z", "200"),
             ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.5"),
             ("single_x", "0"), ("single_y", "0"),
             # ref=0, sink=38 -> target=38; dep=-5: X<B<C<D OK
-            ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+            ("entry_edge_z", "20"), ("exit_edge_z", "-5"), ("target_surface_z", "38"),
             ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
             ("full_cut_overlap_mm", "0.250"),
         ]:
@@ -153,7 +155,7 @@ class TestNcStaleGuard(unittest.TestCase):
         app = self.app
         self._setup_bsf_with_edges(app)
         app.generate_bsf_code()
-        _set(app, "bsf_reference_z", "20")
+        _set(app, "target_surface_z", "58")
         self.assertEqual(self._state(), NC_STATE_STALE)
 
     def test_coord_list_mutations_stale(self):

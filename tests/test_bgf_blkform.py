@@ -208,11 +208,11 @@ class TestBlkFormGuiToExport(unittest.TestCase):
         _set(app, "blank_height", "60")
         # FAIL-CLOSED: Pflichtparameter ref=0, sink=38 -> target=38; dep=-5 OK
         for k, v in [
-            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
-            ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
+            
+            ("safe_z", "100"), ("end_safe_z", "200"),
             ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.5"),
             ("single_x", "0"), ("single_y", "0"),
-            ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+            ("entry_edge_z", "20"), ("exit_edge_z", "-5"), ("target_surface_z", "38"),
             ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
             ("full_cut_overlap_mm", "0.250"),
         ]:

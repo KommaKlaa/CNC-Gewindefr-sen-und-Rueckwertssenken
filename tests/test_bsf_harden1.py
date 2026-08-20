@@ -25,18 +25,15 @@ TOOL_E = BSF_TOOL_PROFILES["BSF_E_1350_050_16_5_14"]
 # Geometrie-Parameter die X<B<C<D garantieren fuer ref=0, sink=38, Z0=Bottom
 # dep=-5: X=-27.25, B=-14.55, C=-13.3, D=29.45
 _VALID_EDGES = {
-    "deployment_edge_z": "-5",
+    "exit_edge_z": "-5",
     "entry_edge_z": "20",
+    "target_surface_z": "38",
     "x_safety_clearance": "2.000",
     "entry_clearance": "1.000",
     "full_cut_overlap_mm": "0.250",
 }
 
 _COMMON_BSF = {
-    "bund_thickness": "18",
-    "sink_depth": "38",
-    "clearance": "23",
-    "bsf_reference_z": "0",
     "safe_z": "100",
     "end_safe_z": "200",
     "spindle_speed": "800",
@@ -96,16 +93,16 @@ class TestFailClosedEdges(unittest.TestCase):
             _restore_mb(orig)
         code = app.output_text.get("1.0", "end").strip()
         self.assertEqual(code, "", "NC muss bei fehlendem deployment_edge_z leer bleiben")
-        self.assertTrue(any("Ausklappkante" in str(e) or "deployment" in str(e).lower() for e in errors),
-                        f"Erwarte Fehlermeldung zu Ausklappkante, bekam: {errors}")
+        self.assertTrue(any("Austrittskante" in str(e) or "exit" in str(e).lower() for e in errors),
+                        f"Erwarte Fehlermeldung zu Austrittskante, bekam: {errors}")
         root.destroy()
 
     def test_missing_entry_edge_blocks_nc(self):
         """NC-Erzeugung muss blockieren wenn entry_edge_z fehlt."""
         root, app = _setup_app(with_edges=False)
         # deployment_edge_z setzen, aber entry_edge_z leer lassen
-        app.entries["deployment_edge_z"].delete(0, "end")
-        app.entries["deployment_edge_z"].insert(0, "-5")
+        app.entries["exit_edge_z"].delete(0, "end")
+        app.entries["exit_edge_z"].insert(0, "-5")
         orig, errors = _silence_mb()
         try:
             app.generate_bsf_code()
@@ -148,8 +145,8 @@ class TestFailClosedEdges(unittest.TestCase):
     def test_no_fallback_from_reference_z(self):
         """Kein automatisches entry_edge = reference_z Fallback."""
         root, app = _setup_app(with_edges=False)
-        app.entries["deployment_edge_z"].delete(0, "end")
-        app.entries["deployment_edge_z"].insert(0, "-5")
+        app.entries["exit_edge_z"].delete(0, "end")
+        app.entries["exit_edge_z"].insert(0, "-5")
         # entry_edge_z explizit leer lassen
         orig, _ = _silence_mb()
         try:
@@ -191,9 +188,9 @@ class TestFullCutOverlapParameter(unittest.TestCase):
         # Default: C = dep - Hs + 0.25 = -5 - 8.55 + 0.25 = -13.3
         # Benutzerwert 0.40: C = -5 - 8.55 + 0.40 = -13.15
         pos_default = compute_heule_process_positions(
-            deployment_edge_z=-5.0,
+            exit_edge_z=-5.0,
             entry_edge_z=20.0,
-            target_cutting_edge_z=38.0,
+            target_surface_z=38.0,
             measurement_face_to_cutting_edge_mm=8.55,
             deployment_length_al_mm=20.25,
             x_safety_clearance_mm=2.0,
@@ -201,9 +198,9 @@ class TestFullCutOverlapParameter(unittest.TestCase):
             full_cut_overlap_mm=0.25,
         )
         pos_custom = compute_heule_process_positions(
-            deployment_edge_z=-5.0,
+            exit_edge_z=-5.0,
             entry_edge_z=20.0,
-            target_cutting_edge_z=38.0,
+            target_surface_z=38.0,
             measurement_face_to_cutting_edge_mm=8.55,
             deployment_length_al_mm=20.25,
             x_safety_clearance_mm=2.0,
@@ -222,8 +219,7 @@ class TestFullCutOverlapParameter(unittest.TestCase):
         with self.assertRaises(BSFDocumentError):
             build_bsf_document(
                 program_name="TEST", tool_number=8, blank_size=1000.0, blank_height=60.0,
-                z_reference="BOTTOM_EDGE", tool_profile_key="BSF_C_1000_050_10_5_23",
-                bund_thickness=18.0, sink_finish=38.0, clearance=23.0,
+                tool_profile_key="BSF_C_1000_050_10_5_23",
                 spindle_speed=800, feed=60.0, dwell_time=1.5,
                 reduce_approach=True, approach_feed_factor=0.5,
                 activate_preset="IKZ Ein (M7)", activate_custom="",
@@ -253,8 +249,7 @@ class TestFullCutOverlapParameter(unittest.TestCase):
         """full_cut_overlap_mm wird in JSON V4 persistiert und korrekt geladen."""
         doc = build_bsf_document(
             program_name="TEST", tool_number=8, blank_size=1000.0, blank_height=60.0,
-            z_reference="BOTTOM_EDGE", tool_profile_key="BSF_C_1000_050_10_5_23",
-            bund_thickness=18.0, sink_finish=38.0, clearance=23.0,
+            tool_profile_key="BSF_C_1000_050_10_5_23",
             spindle_speed=800, feed=60.0, dwell_time=1.5,
             reduce_approach=True, approach_feed_factor=0.5,
             activate_preset="IKZ Ein (M7)", activate_custom="",
@@ -273,8 +268,7 @@ class TestFullCutOverlapParameter(unittest.TestCase):
         """Legacy-JSON ohne full_cut_overlap_mm erhaelt Default 0.25."""
         doc = build_bsf_document(
             program_name="TEST", tool_number=8, blank_size=1000.0, blank_height=60.0,
-            z_reference="BOTTOM_EDGE", tool_profile_key="BSF_C_1000_050_10_5_23",
-            bund_thickness=18.0, sink_finish=38.0, clearance=23.0,
+            tool_profile_key="BSF_C_1000_050_10_5_23",
             spindle_speed=800, feed=60.0, dwell_time=1.5,
             reduce_approach=True, approach_feed_factor=0.5,
             activate_preset="IKZ Ein (M7)", activate_custom="",
@@ -321,9 +315,9 @@ class TestDInvariant(unittest.TestCase):
 
         # D_HEULE: Neues Modell
         pos = compute_heule_process_positions(
-            deployment_edge_z=dep_z,
+            exit_edge_z=dep_z,
             entry_edge_z=reference_z + 20.0,
-            target_cutting_edge_z=target_cutting_edge_z,
+            target_surface_z=target_cutting_edge_z,
             measurement_face_to_cutting_edge_mm=hs,
             deployment_length_al_mm=al,
             x_safety_clearance_mm=2.0,
@@ -461,9 +455,9 @@ class TestXPositionNoHsOffset(unittest.TestCase):
     def test_x_c_tool_no_hs_double_offset(self):
         """X = deployment_edge - AL - safety (kein Hs-Abzug)."""
         pos = compute_heule_process_positions(
-            deployment_edge_z=-5.0,
+            exit_edge_z=-5.0,
             entry_edge_z=20.0,
-            target_cutting_edge_z=38.0,
+            target_surface_z=38.0,
             measurement_face_to_cutting_edge_mm=TOOL_C.measurement_face_to_cutting_edge_mm,
             deployment_length_al_mm=TOOL_C.deployment_length_al_mm,
             x_safety_clearance_mm=2.0,
@@ -475,9 +469,9 @@ class TestXPositionNoHsOffset(unittest.TestCase):
     def test_x_e_tool_no_hs_double_offset(self):
         """X = deployment_edge - AL - safety (kein Hs-Abzug) fuer BSF-E."""
         pos = compute_heule_process_positions(
-            deployment_edge_z=-5.0,
+            exit_edge_z=-5.0,
             entry_edge_z=20.0,
-            target_cutting_edge_z=38.0,
+            target_surface_z=38.0,
             measurement_face_to_cutting_edge_mm=TOOL_E.measurement_face_to_cutting_edge_mm,
             deployment_length_al_mm=TOOL_E.deployment_length_al_mm,
             x_safety_clearance_mm=2.0,
@@ -501,8 +495,7 @@ class TestLegacyJsonLoad(unittest.TestCase):
         """Erstellt ein V3-aehliches Payload ohne neue Geometrie-Felder."""
         doc = build_bsf_document(
             program_name="LEGACY", tool_number=8, blank_size=1000.0, blank_height=60.0,
-            z_reference="BOTTOM_EDGE", tool_profile_key="BSF_C_1000_050_10_5_23",
-            bund_thickness=18.0, sink_finish=38.0, clearance=23.0,
+            tool_profile_key="BSF_C_1000_050_10_5_23",
             spindle_speed=800, feed=60.0, dwell_time=1.5,
             reduce_approach=True, approach_feed_factor=0.5,
             activate_preset="IKZ Ein (M7)", activate_custom="",
@@ -511,11 +504,15 @@ class TestLegacyJsonLoad(unittest.TestCase):
             positions=[BSFCoordinatePosition(0.0, 0.0)],
         )
         payload = document_to_dict(doc)
-        # Simuliere V3 ohne deployment/entry-Felder
         payload["version"] = 3
-        del payload["workpiece"]["deployment_edge_z"]
-        del payload["workpiece"]["entry_edge_z"]
-        del payload["workpiece"]["full_cut_overlap_mm"]
+        payload["workpiece"] = {
+            "z_reference": "BOTTOM_EDGE",
+            "bund_thickness": 18.0,
+            "sink_finish": 38.0,
+            "clearance": 23.0,
+            "x_safety_clearance": 2.0,
+            "entry_clearance": 1.0,
+        }
         return payload
 
     def test_legacy_loads_with_none_edges(self):
@@ -545,12 +542,15 @@ class TestLegacyJsonLoad(unittest.TestCase):
         # Dokument laden - Kanten sind None -> leere Entries
         app._apply_bsf_position_list_document(doc)
         # Kanten muessen leer sein
-        dep_val = app.entries.get("deployment_edge_z", None)
+        dep_val = app.entries.get("exit_edge_z", None)
         ent_val = app.entries.get("entry_edge_z", None)
+        tgt_val = app.entries.get("target_surface_z", None)
         if dep_val is not None:
-            self.assertEqual(dep_val.get().strip(), "", "deployment_edge_z muss leer sein nach Legacy-Load")
+            self.assertEqual(dep_val.get().strip(), "", "exit_edge_z muss leer sein nach Legacy-Load")
         if ent_val is not None:
             self.assertEqual(ent_val.get().strip(), "", "entry_edge_z muss leer sein nach Legacy-Load")
+        if tgt_val is not None:
+            self.assertEqual(tgt_val.get().strip(), "", "target_surface_z muss leer sein nach Legacy-Load")
         # NC-Erzeugung muss blockieren
         orig, errors = _silence_mb()
         try:

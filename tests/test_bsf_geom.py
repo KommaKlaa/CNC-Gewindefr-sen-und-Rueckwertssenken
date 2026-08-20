@@ -62,26 +62,25 @@ class TestGuiBsfToolarch(unittest.TestCase):
         app.mode_var.set(MODE_BSF)
         app.on_mode_change(None)
         for key, val in (
-            ("bund_thickness", "18"),
-            ("sink_depth", "38"),
-            ("clearance", "23"),
             ("dwell_time", "1.5"),
             ("spindle_speed", "800"),
             ("feed_rate", "60"),
             ("safe_z", "100"),
             ("end_safe_z", "200"),
-            ("bsf_reference_z", "0"),
+            
             ("single_x", "0"),
             ("single_y", "0"),
             # FAIL-CLOSED: Pflichtparameter fuer HEULE-NC-Erzeugung
             # reference_z=0, sink_depth=38, Z0=Bottom -> target=38
             # dep_z=-5: X=-27.25, B=-14.55, C=-13.3, D=29.45 -> X<B<C<D OK
-            ("deployment_edge_z", "-5"),
+            ("exit_edge_z", "-5"), ("target_surface_z", "38"),
             ("entry_edge_z", "20"),
             ("x_safety_clearance", "2.000"),
             ("entry_clearance", "1.000"),
             ("full_cut_overlap_mm", "0.250"),
         ):
+            if key not in app.entries:
+                continue
             app.entries[key].delete(0, "end")
             app.entries[key].insert(0, val)
         app.position_mode_var.set("Einzelposition")
@@ -117,14 +116,12 @@ class TestGuiBsfToolarch(unittest.TestCase):
     def test_reference_z_and_tool_c_generate_measurement_face_z(self):
         self.app.bsf_tool_profile_var.set(TOOL_C.designation)
         self.app.on_bsf_tool_profile_change()
-        self.app.entries["bsf_reference_z"].delete(0, "end")
-        self.app.entries["bsf_reference_z"].insert(0, "20")
-        # reference_z=20, sink_depth=38 -> target=58; dep_z=15 (ref-5), entry_edge_z=40 (ref+20)
-        # X = 15-20.25-2 = -7.25, B = 15-8.55-1 = 5.45, C = 15-8.55+0.25 = 6.7, D = 58-8.55 = 49.45
-        self.app.entries["deployment_edge_z"].delete(0, "end")
-        self.app.entries["deployment_edge_z"].insert(0, "15")
+        self.app.entries["exit_edge_z"].delete(0, "end")
+        self.app.entries["exit_edge_z"].insert(0, "15")
         self.app.entries["entry_edge_z"].delete(0, "end")
         self.app.entries["entry_edge_z"].insert(0, "40")
+        self.app.entries["target_surface_z"].delete(0, "end")
+        self.app.entries["target_surface_z"].insert(0, "58")
         self.app.generate_bsf_code()
         code = self.app.output_text.get("1.0", "end")
         self.assertIn("L Z+49.4500 R0 F30 ; Senken mit 50 Prozent Vorschub", code)

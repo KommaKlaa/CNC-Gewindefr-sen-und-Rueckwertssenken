@@ -279,12 +279,8 @@ class TestProgrammerJson(unittest.TestCase):
             tool_number=8,
             blank_size=1000.0,
             blank_height=60.0,
-            z_reference="BOTTOM_EDGE",
-            tool_profile_key="BSF_C_1000_050_10_5_23",
-            bund_thickness=18.0,
-            sink_finish=38.0,
-            clearance=23.0,
-            spindle_speed=1500,
+                tool_profile_key="BSF_C_1000_050_10_5_23",
+                        spindle_speed=1500,
             feed=120.0,
             dwell_time=1.5,
             reduce_approach=True,
@@ -296,9 +292,12 @@ class TestProgrammerJson(unittest.TestCase):
             safe_z=100.0,
             end_safe_z=200.0,
             positions=[BSFCoordinatePosition(0, 0)],
+            entry_edge_z=20.0,
+            exit_edge_z=-5.0,
+            target_surface_z=38.0,
             programmer="Max Mustermann",
         )
-        self.assertEqual(BSF_FORMAT_VERSION, 4)
+        self.assertEqual(BSF_FORMAT_VERSION, 5)
         payload = bsf_document_to_dict(doc)
         self.assertEqual(payload["program"]["programmer"], "Max Mustermann")
         with tempfile.TemporaryDirectory() as tmp:
@@ -313,12 +312,8 @@ class TestProgrammerJson(unittest.TestCase):
                 tool_number=8,
                 blank_size=1000.0,
                 blank_height=60.0,
-                z_reference="BOTTOM_EDGE",
-                tool_profile_key="BSF_C_1000_050_10_5_23",
-                bund_thickness=18.0,
-                sink_finish=38.0,
-                clearance=23.0,
-                spindle_speed=1500,
+                        tool_profile_key="BSF_C_1000_050_10_5_23",
+                                        spindle_speed=1500,
                 feed=120.0,
                 dwell_time=1.5,
                 reduce_approach=False,
@@ -330,12 +325,22 @@ class TestProgrammerJson(unittest.TestCase):
                 safe_z=100.0,
                 end_safe_z=200.0,
                 positions=[BSFCoordinatePosition(1, 1)],
+                entry_edge_z=20.0,
+                exit_edge_z=-5.0,
+                target_surface_z=38.0,
             )
         )
         del legacy["program"]["programmer"]
         legacy["version"] = 1
         legacy["blade"] = {"thickness": 3.0, "measurement_reference": "SPINDLE_SIDE_EDGE"}
         del legacy["tool"]
+        legacy["workpiece"] = {
+            "z_reference": "BOTTOM_EDGE",
+            "reference_z": 0.0,
+            "bund_thickness": 18.0,
+            "sink_finish": 38.0,
+            "clearance": 23.0,
+        }
         parsed = parse_bsf_dict(legacy)
         self.assertEqual(parsed.programmer, "")
 

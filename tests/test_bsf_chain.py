@@ -63,12 +63,12 @@ def _set_bsf_common(app, *, end_mode=BSF_END_MODE_CHAIN):
     app.bsf_end_mode_var.set(bsf_end_mode_label(end_mode))
     for k, v in [
         ("spindle_speed", "800"), ("feed_rate", "60"), ("dwell_time", "1.0"),
-        ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
-        ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
+        
+        ("safe_z", "100"), ("end_safe_z", "200"),
         ("program_name", "TEST_BSF"), ("raw_stock_top_z", "0"),
         ("blank_height", "60"), ("blank_size", "1000"),
         # FAIL-CLOSED: ref=0, sink=38 -> target=38; dep=-5: X=-27.25, B=-14.55, C=-13.3, D=29.45
-        ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+        ("entry_edge_z", "20"), ("exit_edge_z", "-5"), ("target_surface_z", "38"),
         ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
         ("full_cut_overlap_mm", "0.250"),
     ]:
@@ -133,11 +133,7 @@ def _doc_base(**kwargs):
         tool_number=8,
         blank_size=1000.0,
         blank_height=60.0,
-        z_reference="BOTTOM_EDGE",
         tool_profile_key=TOOL_KEY,
-        bund_thickness=18.0,
-        sink_finish=38.0,
-        clearance=23.0,
         spindle_speed=1500,
         feed=120.0,
         dwell_time=1.5,
@@ -150,7 +146,9 @@ def _doc_base(**kwargs):
         safe_z=100.0,
         end_safe_z=200.0,
         positions=[BSFCoordinatePosition(0.0, 0.0), BSFCoordinatePosition(100.0, 50.0)],
-        reference_z=0.0,
+        entry_edge_z=20.0,
+        exit_edge_z=-5.0,
+        target_surface_z=38.0,
     )
     base.update(kwargs)
     return base

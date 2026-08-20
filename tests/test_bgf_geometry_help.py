@@ -419,8 +419,7 @@ class TestBgfHelpWindow(unittest.TestCase):
 
         self.app.mode_var.set(MODE_BSF)
         self.app.on_mode_change(None)
-        self.app.z0_var.set("Z0 ist Unterkante Bund")
-        for key, val in (("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23")):
+        for key, val in (("entry_edge_z", "20"), ("exit_edge_z", "-5"), ("target_surface_z", "38")):
             self.app.entries[key].delete(0, "end")
             self.app.entries[key].insert(0, val)
         self.app.entries["blade_thickness"].delete(0, "end")

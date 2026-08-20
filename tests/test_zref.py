@@ -100,6 +100,8 @@ def _fill_blade(app, designation=TOOL_C.designation):
 
 
 def _set_entry(app, key, value):
+    if key not in app.entries:
+        return
     app.entries[key].delete(0, "end")
     app.entries[key].insert(0, value)
 
@@ -311,19 +313,15 @@ class TestBsfGuiZref(unittest.TestCase):
         app.bsf_end_mode_var.set(bsf_end_mode_label(BSF_END_MODE_STANDALONE))
         app.position_mode_var.set("Einzelposition")
         app.on_position_mode_change(None)
-        app.z0_var.set("Z0 ist Unterkante Bund")
         for key, val in (
-            ("bund_thickness", "18"),
-            ("sink_depth", "38"),
-            ("clearance", "23"),
             ("single_x", "0"),
             ("single_y", "0"),
             ("safe_z", "100"),
             ("end_safe_z", "200"),
-            ("bsf_reference_z", "0"),
+            
             # FAIL-CLOSED: Pflichtparameter fuer HEULE-NC-Erzeugung
             # Absolute Kanten: unabhaengig von reference_z
-            ("deployment_edge_z", "60"),
+            ("exit_edge_z", "60"), ("target_surface_z", "80.5"),
             ("entry_edge_z", "0"),
             ("x_safety_clearance", "2.000"),
             ("entry_clearance", "1.000"),
@@ -341,10 +339,11 @@ class TestBsfGuiZref(unittest.TestCase):
         # Bei z0_is_flange_bottom: target = ref + sink, Bund geht von ref bis ref+bund_thickness.
         # deployment_edge_z = ref - 5 liegt unterhalb des Bundes.
         dep_z = ref - 5.0
-        ent_z = ref + 20.0  # Oberkante Bund: ref + bund_thickness = ref + 18
-        _set_entry(self.app, "deployment_edge_z", f"{dep_z:g}")
+        ent_z = ref + 20.0
+        tgt_z = ref + 38.0
+        _set_entry(self.app, "exit_edge_z", f"{dep_z:g}")
         _set_entry(self.app, "entry_edge_z", f"{ent_z:g}")
-        _set_entry(self.app, "bsf_reference_z", reference)
+        _set_entry(self.app, "target_surface_z", f"{tgt_z:g}")
         _fill_blade(self.app, designation)
         self.app.generate_bsf_code()
         return self.app.output_text.get("1.0", "end")
@@ -423,7 +422,9 @@ class TestBsfGuiZref(unittest.TestCase):
     def test_safe_z_high_reference_blocked(self):
         import tkinter.messagebox as mb
 
-        _set_entry(self.app, "bsf_reference_z", "120")
+        _set_entry(self.app, "exit_edge_z", "115")
+        _set_entry(self.app, "entry_edge_z", "140")
+        _set_entry(self.app, "target_surface_z", "158")
         _set_entry(self.app, "safe_z", "100")
         self.app.output_text.delete("1.0", "end")
         orig = _silence(mb)
@@ -438,33 +439,31 @@ class TestBsfGuiZref(unittest.TestCase):
         self.assertIn("L Z+100.0000 R0 FMAX ; Aus der Bohrung", code)
         self.assertNotIn("L Z+120.0000 R0 FMAX ; Aus der Bohrung", code)
 
-    def test_mode_switch_keeps_reference(self):
-        _set_entry(self.app, "bsf_reference_z", "-20")
+    def test_mode_switch_keeps_direct_z(self):
+        _set_entry(self.app, "exit_edge_z", "-20")
         for mode in ("Teilkreis", "Einzelposition", "Koordinatenliste"):
             self.app.position_mode_var.set(mode)
             self.app.on_position_mode_change(None)
-            self.assertEqual(self.app.entries["bsf_reference_z"].get(), "-20")
+            self.assertEqual(self.app.entries["exit_edge_z"].get(), "-20")
         self.app.mode_var.set(MODE_BGF)
         self.app.on_mode_change(None)
         self.app.mode_var.set(MODE_BSF)
         self.app.on_mode_change(None)
-        self.assertEqual(self.app.entries["bsf_reference_z"].get(), "-20")
+        self.assertEqual(self.app.entries["exit_edge_z"].get(), "-20")
 
-    def test_csv_does_not_change_reference(self):
-        _set_entry(self.app, "bsf_reference_z", "20")
+    def test_csv_does_not_change_direct_z(self):
+        _set_entry(self.app, "exit_edge_z", "20")
         text = export_bsf_csv([BSFCoordinatePosition(1.0, 2.0), BSFCoordinatePosition(3.0, 4.0)])
         parsed = import_bsf_csv_text(text)
         self.app.bsf_coord_rows = parsed
-        self.assertEqual(self.app.entries["bsf_reference_z"].get(), "20")
+        self.assertEqual(self.app.entries["exit_edge_z"].get(), "20")
         self.assertNotIn("reference_z", text)
         self.assertTrue(text.startswith("Nr;X;Y"))
 
-    def test_all_bsf_modes_use_global_reference(self):
-        ref = 20.0
-        _set_entry(self.app, "bsf_reference_z", f"{ref:g}")
-        # Kanten konsistent zur neuen Bezugsebene setzen
-        _set_entry(self.app, "deployment_edge_z", f"{ref - 5.0:g}")
-        _set_entry(self.app, "entry_edge_z", f"{ref + 20.0:g}")
+    def test_all_bsf_modes_use_direct_z(self):
+        _set_entry(self.app, "exit_edge_z", "15")
+        _set_entry(self.app, "entry_edge_z", "40")
+        _set_entry(self.app, "target_surface_z", "58")
         codes = []
         self.app.bsf_coord_rows = [BSFCoordinatePosition(0.0, 0.0)]
         for mode in ("Teilkreis", "Einzelposition", "Koordinatenliste"):
@@ -485,12 +484,8 @@ class TestBsfJsonReferenceZ(unittest.TestCase):
             tool_number=8,
             blank_size=1000.0,
             blank_height=60.0,
-            z_reference="BOTTOM_EDGE",
-            tool_profile_key="BSF_C_1000_050_10_5_23",
-            bund_thickness=18.0,
-            sink_finish=38.0,
-            clearance=23.0,
-            spindle_speed=800,
+                tool_profile_key="BSF_C_1000_050_10_5_23",
+                        spindle_speed=800,
             feed=60.0,
             dwell_time=1.5,
             reduce_approach=True,
@@ -502,26 +497,33 @@ class TestBsfJsonReferenceZ(unittest.TestCase):
             safe_z=100.0,
             end_safe_z=200.0,
             positions=[BSFCoordinatePosition(0.0, 0.0)],
+            entry_edge_z=20.0,
+            exit_edge_z=-5.0,
+            target_surface_z=38.0,
         )
         base.update(kwargs)
         return build_bsf_document(**base)
 
-    def test_roundtrip_20_5(self):
-        doc = self._doc(reference_z=20.5)
+    def test_roundtrip_direct_z(self):
+        doc = self._doc(entry_edge_z=40.5, exit_edge_z=15.5, target_surface_z=58.5)
         payload = document_to_dict(doc)
-        self.assertEqual(payload["workpiece"]["reference_z"], 20.5)
+        self.assertEqual(payload["workpiece"]["entry_edge_z"], 40.5)
         loaded = parse_document_dict(payload)
-        self.assertEqual(loaded.reference_z, 20.5)
-        self.assertEqual(loaded.version, 4)
+        self.assertEqual(loaded.entry_edge_z, 40.5)
+        self.assertEqual(loaded.version, 5)
 
-    def test_legacy_defaults_zero(self):
+    def test_legacy_v1_needs_confirmation(self):
         payload = document_to_dict(self._doc())
         payload["version"] = 1
         payload["blade"] = {"thickness": 3.0, "measurement_reference": "SPINDLE_SIDE_EDGE"}
         del payload["tool"]
-        del payload["workpiece"]["reference_z"]
+        payload["workpiece"]["z_reference"] = "BOTTOM_EDGE"
+        payload["workpiece"]["bund_thickness"] = 18.0
+        payload["workpiece"]["sink_finish"] = 38.0
+        payload["workpiece"]["clearance"] = 23.0
         loaded = parse_document_dict(payload)
-        self.assertEqual(loaded.reference_z, 0.0)
+        self.assertTrue(loaded.legacy_geometry_needs_confirmation)
+        self.assertIsNone(loaded.target_surface_z)
 
     def test_gui_json_roundtrip_keeps_nc(self):
         import tkinter as tk
@@ -535,10 +537,9 @@ class TestBsfJsonReferenceZ(unittest.TestCase):
         app.position_mode_var.set("Koordinatenliste")
         app.on_position_mode_change(None)
         _fill_blade(app)
-        _set_entry(app, "bsf_reference_z", "20.5")
-        # FAIL-CLOSED: Kanten konsistent zu ref=20.5 setzen
-        _set_entry(app, "deployment_edge_z", "15.5")   # ref-5 = 15.5
-        _set_entry(app, "entry_edge_z", "40.5")         # ref+20 = 40.5
+        _set_entry(app, "exit_edge_z", "15.5")
+        _set_entry(app, "entry_edge_z", "40.5")
+        _set_entry(app, "target_surface_z", "58.5")
         _set_entry(app, "x_safety_clearance", "2.000")
         _set_entry(app, "entry_clearance", "1.000")
         _set_entry(app, "full_cut_overlap_mm", "0.250")
@@ -555,7 +556,9 @@ class TestBsfJsonReferenceZ(unittest.TestCase):
                 save_bsf_document_json(path, doc)
                 loaded = load_bsf_document_json(path)
             app._apply_bsf_position_list_document(loaded)
-            self.assertEqual(app.entries["bsf_reference_z"].get(), "20.5")
+            self.assertEqual(app.entries["entry_edge_z"].get(), "40.5")
+            self.assertEqual(app.entries["exit_edge_z"].get(), "15.5")
+            self.assertEqual(app.entries["target_surface_z"].get(), "58.5")
             app.generate_bsf_code()
             after = app.output_text.get("1.0", "end")
         finally:
@@ -566,7 +569,7 @@ class TestBsfJsonReferenceZ(unittest.TestCase):
 
     def test_nan_json_blocked(self):
         payload = document_to_dict(self._doc())
-        payload["workpiece"]["reference_z"] = float("nan")
+        payload["workpiece"]["entry_edge_z"] = float("nan")
         with self.assertRaises(Exception):
             parse_document_dict(payload)
 
@@ -603,31 +606,26 @@ class TestBgfHelpZref(unittest.TestCase):
 
 
 class TestBsfHelpZref(unittest.TestCase):
-    def test_help_shows_shifted_z(self):
+    def test_help_shows_translated_z(self):
         snap0 = build_bsf_geometry_help_snapshot(
-            bund_text="18",
-            sink_text="38",
-            clearance_text="23",
-            z0_label="Z0 ist Unterkante Bund",
-            reference_z_text="0",
+            entry_text="20",
+            exit_text="-5",
+            target_text="38",
             tool_designation=TOOL_C.designation,
         )
         snap20 = build_bsf_geometry_help_snapshot(
-            bund_text="18",
-            sink_text="38",
-            clearance_text="23",
-            z0_label="Z0 ist Unterkante Bund",
-            reference_z_text="20",
+            entry_text="40",
+            exit_text="15",
+            target_text="58",
             tool_designation=TOOL_C.designation,
         )
         self.assertAlmostEqual(snap0.programmed_measurement_face_z_sink_finish, 29.45, places=3)
         self.assertAlmostEqual(snap20.programmed_measurement_face_z_sink_finish, 49.45, places=3)
-        self.assertEqual(snap20.reference_z, 20.0)
+        self.assertEqual(snap20.reference_z, 0.0)
         from help_views.bsf_geometry_model import format_help_info
 
         info = format_help_info(snap20)
-        self.assertIn("Bezugsebene", info)
-        self.assertIn("+20.0000", info)
+        self.assertIn("Z0", info)
         self.assertIn("+58.0000", info)
 
 

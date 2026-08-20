@@ -30,17 +30,14 @@ class TestBsfCoordGui(unittest.TestCase):
         app.bsf_tool_profile_var.set(TOOL_C.designation)
         app.on_bsf_tool_profile_change()
         for key, val in (
-            ("bund_thickness", "18"),
-            ("sink_depth", "38"),
-            ("clearance", "23"),
             ("dwell_time", "1.5"),
             ("spindle_speed", "800"),
             ("feed_rate", "60"),
             ("safe_z", "100"),
             ("end_safe_z", "200"),
-            ("bsf_reference_z", "0"),
+            
             # FAIL-CLOSED: dep=-5 -> X<B<C<D fuer sink=38, ref=0
-            ("deployment_edge_z", "-5"),
+            ("exit_edge_z", "-5"), ("target_surface_z", "38"),
             ("entry_edge_z", "20"),
             ("x_safety_clearance", "2.000"),
             ("entry_clearance", "1.000"),

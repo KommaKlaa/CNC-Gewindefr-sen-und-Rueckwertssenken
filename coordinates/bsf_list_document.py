@@ -3,7 +3,8 @@
 Version 2 speichert das gewaehlte HEULE-Werkzeugprofil ueber seinen stabilen Key.
 Version 3 erweitert das workpiece-Modell um raw_surface_z (optional).
 Version 4 erweitert das workpiece-Modell um deployment/entry Geometrie fuer HEULE-X/A.
-Legacy-Version 1 wird weiterhin geladen, aber ohne Auto-Mapping auf ein Profil.
+Version 5 speichert direkte Z0-Koordinaten: entry_edge_z, exit_edge_z, target_surface_z.
+Legacy-Version 1–4 werden geladen, aber NICHT automatisch in V5-NC umgewandelt.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from nc_programmer import ProgrammerError, normalize_programmer
 from .bsf_position import BSFCoordinatePosition
 
 FORMAT_NAME = "HEULE_BSF_POSITION_LIST"
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 MAX_BSF_POSITIONS = 10_000
 MAX_FILE_BYTES = 5_000_000
 
@@ -67,11 +68,11 @@ class BSFPositionListDocument:
     tool_number: int
     blank_size: float
     blank_height: float
-    z_reference: str
+    z_reference: str | None
     tool_profile_key: str | None
-    bund_thickness: float
-    sink_finish: float
-    clearance: float
+    bund_thickness: float | None
+    sink_finish: float | None
+    clearance: float | None
     spindle_speed: int
     feed: float
     dwell_time: float
@@ -85,10 +86,12 @@ class BSFPositionListDocument:
     end_safe_z: float
     positions: Tuple[BSFCoordinatePosition, ...] = field(default_factory=tuple)
     programmer: str = ""
-    reference_z: float = 0.0
+    reference_z: float | None = None
     raw_stock_top_z: float = 0.0
     raw_surface_z: float | None = None
     deployment_edge_z: float | None = None
+    exit_edge_z: float | None = None
+    target_surface_z: float | None = None
     x_safety_clearance: float = 2.0
     entry_edge_z: float | None = None
     entry_clearance: float = 1.0
@@ -105,7 +108,23 @@ class BSFPositionListDocument:
 
     @property
     def z0_label(self) -> str:
-        return Z0_LABEL_BOTTOM if self.z0_is_flange_bottom else Z0_LABEL_TOP
+        if self.z_reference == Z_REF_TOP:
+            return Z0_LABEL_TOP
+        if self.z_reference == Z_REF_BOTTOM:
+            return Z0_LABEL_BOTTOM
+        return ""
+
+    @property
+    def has_explicit_v5_geometry(self) -> bool:
+        return (
+            self.entry_edge_z is not None
+            and self.exit_edge_z is not None
+            and self.target_surface_z is not None
+        )
+
+    @property
+    def legacy_geometry_needs_confirmation(self) -> bool:
+        return self.version < 5 or not self.has_explicit_v5_geometry
 
 
 def _optional_programmer(raw: Any) -> str:
@@ -207,15 +226,11 @@ def document_to_dict(doc: BSFPositionListDocument) -> Dict[str, Any]:
             "raw_stock_top_z": doc.raw_stock_top_z,
         },
         "workpiece": {
-            "z_reference": doc.z_reference,
-            "reference_z": doc.reference_z,
-            "bund_thickness": doc.bund_thickness,
-            "sink_finish": doc.sink_finish,
-            "clearance": doc.clearance,
-            "raw_surface_z": doc.raw_surface_z,
-            "deployment_edge_z": doc.deployment_edge_z,
-            "x_safety_clearance": doc.x_safety_clearance,
             "entry_edge_z": doc.entry_edge_z,
+            "exit_edge_z": doc.exit_edge_z,
+            "target_surface_z": doc.target_surface_z,
+            "raw_surface_z": doc.raw_surface_z,
+            "x_safety_clearance": doc.x_safety_clearance,
             "entry_clearance": doc.entry_clearance,
             "full_cut_overlap_mm": doc.full_cut_overlap_mm,
         },
@@ -277,14 +292,35 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
     workpiece = data.get("workpiece")
     if not isinstance(workpiece, dict):
         raise BSFDocumentError("Abschnitt 'workpiece' fehlt oder ist ungueltig.")
-    z_reference = _parse_z_reference(workpiece.get("z_reference"))
-    if "reference_z" in workpiece:
-        reference_z = _require_finite(workpiece.get("reference_z"), "workpiece.reference_z")
+    z_reference = None
+    reference_z = None
+    bund_thickness = None
+    sink_finish = None
+    clearance = None
+    if version < 5:
+        z_reference = _parse_z_reference(workpiece.get("z_reference"))
+        if "reference_z" in workpiece:
+            reference_z = _require_finite(workpiece.get("reference_z"), "workpiece.reference_z")
+        else:
+            reference_z = 0.0
+        bund_thickness = _require_finite(workpiece.get("bund_thickness"), "workpiece.bund_thickness")
+        sink_finish = _require_finite(workpiece.get("sink_finish"), "workpiece.sink_finish")
+        clearance = _require_finite(workpiece.get("clearance"), "workpiece.clearance")
     else:
-        reference_z = 0.0
-    bund_thickness = _require_finite(workpiece.get("bund_thickness"), "workpiece.bund_thickness")
-    sink_finish = _require_finite(workpiece.get("sink_finish"), "workpiece.sink_finish")
-    clearance = _require_finite(workpiece.get("clearance"), "workpiece.clearance")
+        # V5: alte Bezugsebenen-Felder duerfen vorhanden sein, sind aber nicht authoritative.
+        if "z_reference" in workpiece and workpiece.get("z_reference") is not None:
+            try:
+                z_reference = _parse_z_reference(workpiece.get("z_reference"))
+            except BSFDocumentError:
+                z_reference = None
+        if "reference_z" in workpiece and workpiece.get("reference_z") is not None:
+            reference_z = _require_finite(workpiece.get("reference_z"), "workpiece.reference_z")
+        if "bund_thickness" in workpiece and workpiece.get("bund_thickness") is not None:
+            bund_thickness = _require_finite(workpiece.get("bund_thickness"), "workpiece.bund_thickness")
+        if "sink_finish" in workpiece and workpiece.get("sink_finish") is not None:
+            sink_finish = _require_finite(workpiece.get("sink_finish"), "workpiece.sink_finish")
+        if "clearance" in workpiece and workpiece.get("clearance") is not None:
+            clearance = _require_finite(workpiece.get("clearance"), "workpiece.clearance")
     if "raw_surface_z" in workpiece:
         raw_surface_raw = workpiece.get("raw_surface_z")
         if raw_surface_raw is None:
@@ -298,11 +334,27 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         if "deployment_edge_z" in workpiece and workpiece.get("deployment_edge_z") is not None
         else None
     )
+    exit_edge_z = (
+        _require_finite(workpiece.get("exit_edge_z"), "workpiece.exit_edge_z")
+        if "exit_edge_z" in workpiece and workpiece.get("exit_edge_z") is not None
+        else None
+    )
+    target_surface_z = (
+        _require_finite(workpiece.get("target_surface_z"), "workpiece.target_surface_z")
+        if "target_surface_z" in workpiece and workpiece.get("target_surface_z") is not None
+        else None
+    )
     entry_edge_z = (
         _require_finite(workpiece.get("entry_edge_z"), "workpiece.entry_edge_z")
         if "entry_edge_z" in workpiece and workpiece.get("entry_edge_z") is not None
         else None
     )
+    # V1–V4: Austrittskante darf angezeigt, aber nicht als bestaetigte V5-Geometrie gelten.
+    # deployment_edge_z wird nur als Anzeige-Alias geladen, target_surface_z bleibt None.
+    if version < 5:
+        target_surface_z = None
+        if exit_edge_z is None and deployment_edge_z is not None:
+            exit_edge_z = deployment_edge_z
     if "x_safety_clearance" in workpiece:
         x_safety_clearance = _require_finite(workpiece.get("x_safety_clearance"), "workpiece.x_safety_clearance")
     else:
@@ -434,6 +486,8 @@ def parse_document_dict(data: Any) -> BSFPositionListDocument:
         programmer=programmer,
         raw_surface_z=raw_surface_z,
         deployment_edge_z=deployment_edge_z,
+        exit_edge_z=exit_edge_z,
+        target_surface_z=target_surface_z,
         x_safety_clearance=x_safety_clearance,
         entry_edge_z=entry_edge_z,
         entry_clearance=entry_clearance,
@@ -481,11 +535,7 @@ def build_bsf_document(
     tool_number: int,
     blank_size: float,
     blank_height: float,
-    z_reference: str,
     tool_profile_key: str,
-    bund_thickness: float,
-    sink_finish: float,
-    clearance: float,
     spindle_speed: int,
     feed: float,
     dwell_time: float,
@@ -499,22 +549,24 @@ def build_bsf_document(
     end_safe_z: float,
     positions: Sequence[BSFCoordinatePosition],
     programmer: str = "",
-    reference_z: float = 0.0,
     raw_stock_top_z: float = 0.0,
     raw_surface_z: float | None = None,
-    deployment_edge_z: float | None = None,
-    x_safety_clearance: float = 2.0,
     entry_edge_z: float | None = None,
+    exit_edge_z: float | None = None,
+    target_surface_z: float | None = None,
+    x_safety_clearance: float = 2.0,
     entry_clearance: float = 1.0,
     full_cut_overlap_mm: float = 0.25,
     end_mode: str = BSF_END_MODE_CHAIN,
 ) -> BSFPositionListDocument:
     if raw_surface_z is not None and not math.isfinite(raw_surface_z):
         raise BSFDocumentError("Rohflaeche / Ist-Z ist nicht endlich.")
-    if deployment_edge_z is not None and not math.isfinite(deployment_edge_z):
-        raise BSFDocumentError("Ausklappkante Z ist nicht endlich.")
     if entry_edge_z is not None and not math.isfinite(entry_edge_z):
         raise BSFDocumentError("Bohrungs-Eintrittskante Z ist nicht endlich.")
+    if exit_edge_z is not None and not math.isfinite(exit_edge_z):
+        raise BSFDocumentError("Bohrungs-Austrittskante Z ist nicht endlich.")
+    if target_surface_z is not None and not math.isfinite(target_surface_z):
+        raise BSFDocumentError("Ziel-Senkflaeche Z ist nicht endlich.")
     if not math.isfinite(x_safety_clearance) or x_safety_clearance < 0:
         raise BSFDocumentError("Ausklapp-Sicherheitsabstand X muss >= 0 sein.")
     if not math.isfinite(entry_clearance) or entry_clearance < 0:
@@ -532,8 +584,6 @@ def build_bsf_document(
         raise BSFDocumentError("Keine Bearbeitungspositionen vorhanden.")
     if len(positions) > MAX_BSF_POSITIONS:
         raise BSFDocumentError(f"Zu viele Positionen. Maximum: {MAX_BSF_POSITIONS}.")
-    if z_reference not in ALLOWED_Z_REFERENCES:
-        raise BSFDocumentError("Z0-Definition ist unbekannt.")
     if activate_preset not in ACTIVATE_PRESETS:
         raise BSFDocumentError("Unbekannte Messer-Aktivierung.")
     if deactivate_preset not in DEACTIVATE_PRESETS:
@@ -550,9 +600,6 @@ def build_bsf_document(
         if not math.isfinite(pos.x) or not math.isfinite(pos.y):
             raise BSFDocumentError(f"Position {idx}: X/Y ist nicht endlich.")
     for name, value in (
-        ("Bunddicke", bund_thickness),
-        ("Senk-Fertigmaß", sink_finish),
-        ("Freifahrt", clearance),
         ("Vorschub", feed),
         ("Wartezeit", dwell_time),
         ("Anschnittfaktor", approach_feed_factor),
@@ -561,7 +608,6 @@ def build_bsf_document(
         ("Rohteil-Kantenlaenge", blank_size),
         ("Rohteil-Hoehe", blank_height),
         ("Rohteil-Oberkante Z", raw_stock_top_z),
-        ("Z-Lage Bezugsebene", reference_z),
     ):
         if not math.isfinite(value):
             raise BSFDocumentError(f"{name} ist nicht endlich.")
@@ -572,11 +618,11 @@ def build_bsf_document(
         blank_size=float(blank_size),
         blank_height=float(blank_height),
         raw_stock_top_z=float(raw_stock_top_z),
-        z_reference=z_reference,
+        z_reference=None,
         tool_profile_key=tool_profile_key,
-        bund_thickness=float(bund_thickness),
-        sink_finish=float(sink_finish),
-        clearance=float(clearance),
+        bund_thickness=None,
+        sink_finish=None,
+        clearance=None,
         spindle_speed=int(spindle_speed),
         feed=float(feed),
         dwell_time=float(dwell_time),
@@ -590,9 +636,11 @@ def build_bsf_document(
         end_safe_z=float(end_safe_z),
         positions=tuple(positions),
         programmer=programmer_norm,
-        reference_z=float(reference_z),
+        reference_z=None,
         raw_surface_z=float(raw_surface_z) if raw_surface_z is not None else None,
-        deployment_edge_z=float(deployment_edge_z) if deployment_edge_z is not None else None,
+        deployment_edge_z=None,
+        exit_edge_z=float(exit_edge_z) if exit_edge_z is not None else None,
+        target_surface_z=float(target_surface_z) if target_surface_z is not None else None,
         x_safety_clearance=float(x_safety_clearance),
         entry_edge_z=float(entry_edge_z) if entry_edge_z is not None else None,
         entry_clearance=float(entry_clearance),

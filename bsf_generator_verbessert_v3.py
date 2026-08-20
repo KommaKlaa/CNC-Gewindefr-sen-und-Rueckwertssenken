@@ -93,20 +93,13 @@ from bgf_depth import (
 )
 from bgf_depth_reference import references_for_size
 from bgf_depth_approvals import approved_max_thread_depth
-from bsf_blade import (
-    apply_workpiece_reference_z,
-    calculate_workpiece_bsf_z,
-    parse_reference_z,
-    spindle_on_z,
-    validate_bsf_safe_z_against_reference,
-)
+from bsf_workpiece_geometry import validate_bsf_safe_z_direct
 from heule_bsf_tools import (
     MEASUREMENT_LABEL,
     MEASUREMENT_MODEL,
     MEASUREMENT_NC_COMMENT,
     MEASUREMENT_OFFSET_DIRECTION,
     TOOL_SELECTION_REQUIRED,
-    apply_measurement_face_offset,
     ordered_tool_profiles,
     profile_by_designation,
     profile_by_key,
@@ -115,7 +108,6 @@ from heule_bsf_tools import (
 from coordinates.bsf_list_document import (
     APPROACH_FEED_FACTOR_FULL,
     APPROACH_FEED_FACTOR_REDUCED,
-    z_reference_from_label,
 )
 
 from app_paths import apply_window_icon
@@ -615,93 +607,96 @@ class BSFGeneratorGUI:
         self.on_bsf_tool_profile_change()
 
     def create_bsf_processing_panel(self) -> None:
-        """HEULE BSF Bearbeitungsparameter (Werkstueck: Bund, Senkmass, Z0, Freifahrt).
-
-        Schwertgeometrie (blade_thickness, measurement_reference) steht im
-        Werkzeug-Panel; Domain: bsf_blade.py.
-        """
+        """HEULE BSF Bearbeitungsparameter – direkte Z0-Koordinaten."""
         frame = ttk.LabelFrame(self.params_host, text="HEULE BSF Bearbeitungsparameter", padding=8)
         self.bsf_processing_frame = frame
 
-        fields = [
-            (0, 0, "Bund-Dicke (mm):", "bund_thickness", "18"),
-            (0, 2, "Fertigmaß ab Bezugsebene [mm]:", "sink_depth", "38"),
-            (0, 4, "Freifahr-Tiefe unten (mm):", "clearance", "23"),
-            (1, 0, "Wartezeit Druckaufbau (s):", "dwell_time", "1.5"),
-        ]
-        for row, col, label, key, default in fields:
-            ttk.Label(frame, text=label).grid(row=row, column=col, sticky=tk.W, pady=2, padx=(0, 4))
-            entry = ttk.Entry(frame, width=12)
-            entry.insert(0, default)
-            entry.grid(row=row, column=col + 1, sticky=tk.W, pady=2, padx=(0, 12))
-            self.entries[key] = entry
-
-        ttk.Label(frame, text="Bezugsebene:").grid(row=1, column=2, sticky=tk.W, pady=2)
-        self.z0_var = tk.StringVar(value="Z0 ist Unterkante Bund")
-        ttk.Combobox(
-            frame,
-            textvariable=self.z0_var,
-            values=["Z0 ist Unterkante Bund", "Z0 ist Oberkante Bund"],
-            state="readonly",
-            width=24,
-        ).grid(row=1, column=3, columnspan=2, sticky=tk.W, pady=2)
-
-        ttk.Label(frame, text="Z-Lage Bezugsebene [mm]:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.entries["bsf_reference_z"] = ttk.Entry(frame, width=12)
-        self.entries["bsf_reference_z"].insert(0, "0")
-        self.entries["bsf_reference_z"].grid(row=2, column=1, sticky=tk.W, pady=2, padx=(0, 12))
         ttk.Label(
             frame,
-            text="Werkstuecknullpunkt: Z+0 ist das aktive Werkstueckkoordinatensystem.",
+            text=(
+                "Werkstuecknullpunkt Z0 = 0,000. Alle Z-Werte unten beziehen sich direkt auf "
+                "den aktiven Werkstuecknullpunkt.\n"
+                "Werkzeug kommt von +Z und faehrt zum Durchfahren in -Z. Rueckwaertssenken in +Z zur Spindel."
+            ),
             font=("Segoe UI", 8),
-        ).grid(row=2, column=2, columnspan=4, sticky=tk.W, pady=2)
+            wraplength=920,
+            justify=tk.LEFT,
+        ).grid(row=0, column=0, columnspan=6, sticky=tk.W, pady=(0, 6))
 
-        ttk.Label(frame, text="Rohflaeche / Ist-Z [mm] (optional):").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.entries["raw_surface_z"] = ttk.Entry(frame, width=12)
-        self.entries["raw_surface_z"].insert(0, "")
-        self.entries["raw_surface_z"].grid(row=3, column=1, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Ausklappkante / hintere Bohrungskante Z [mm]:").grid(
-            row=3, column=2, sticky=tk.W, pady=2
-        )
-        self.entries["deployment_edge_z"] = ttk.Entry(frame, width=12)
-        self.entries["deployment_edge_z"].insert(0, "")
-        self.entries["deployment_edge_z"].grid(row=3, column=3, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Ausklapp-Sicherheitsabstand X [mm]:").grid(row=3, column=4, sticky=tk.W, pady=2)
-        self.entries["x_safety_clearance"] = ttk.Entry(frame, width=12)
-        self.entries["x_safety_clearance"].insert(0, "2.000")
-        self.entries["x_safety_clearance"].grid(row=3, column=5, sticky=tk.W, pady=2)
-
-        ttk.Label(frame, text="Bohrungs-Eintrittskante Z [mm]:").grid(row=4, column=0, sticky=tk.W, pady=2)
+        ttk.Label(frame, text="Bohrungs-Eintrittskante Z [mm]:").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.entries["entry_edge_z"] = ttk.Entry(frame, width=12)
         self.entries["entry_edge_z"].insert(0, "")
-        self.entries["entry_edge_z"].grid(row=4, column=1, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Eintritts-Sicherheitsabstand A [mm]:").grid(row=4, column=2, sticky=tk.W, pady=2)
+        self.entries["entry_edge_z"].grid(row=1, column=1, sticky=tk.W, pady=2, padx=(0, 12))
+        ttk.Label(frame, text="Bohrungs-Austrittskante / Senkseite Z [mm]:").grid(
+            row=1, column=2, sticky=tk.W, pady=2
+        )
+        self.entries["exit_edge_z"] = ttk.Entry(frame, width=12)
+        self.entries["exit_edge_z"].insert(0, "")
+        self.entries["exit_edge_z"].grid(row=1, column=3, sticky=tk.W, pady=2, padx=(0, 12))
+        ttk.Label(frame, text="Ziel-Senkflaeche Z [mm]:").grid(row=1, column=4, sticky=tk.W, pady=2)
+        self.entries["target_surface_z"] = ttk.Entry(frame, width=12)
+        self.entries["target_surface_z"].insert(0, "")
+        self.entries["target_surface_z"].grid(row=1, column=5, sticky=tk.W, pady=2)
+
+        ttk.Label(frame, text="Rohflaeche / Ist-Z [mm] (optional):").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.entries["raw_surface_z"] = ttk.Entry(frame, width=12)
+        self.entries["raw_surface_z"].insert(0, "")
+        self.entries["raw_surface_z"].grid(row=2, column=1, sticky=tk.W, pady=2, padx=(0, 12))
+        ttk.Label(frame, text="Wartezeit Druckaufbau (s):").grid(row=2, column=2, sticky=tk.W, pady=2)
+        self.entries["dwell_time"] = ttk.Entry(frame, width=12)
+        self.entries["dwell_time"].insert(0, "1.5")
+        self.entries["dwell_time"].grid(row=2, column=3, sticky=tk.W, pady=2, padx=(0, 12))
+
+        ttk.Label(frame, text="Ausklapp-Sicherheitsabstand X [mm]:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.entries["x_safety_clearance"] = ttk.Entry(frame, width=12)
+        self.entries["x_safety_clearance"].insert(0, "2.000")
+        self.entries["x_safety_clearance"].grid(row=3, column=1, sticky=tk.W, pady=2, padx=(0, 12))
+        ttk.Label(frame, text="Eintritts-Sicherheitsabstand A [mm]:").grid(row=3, column=2, sticky=tk.W, pady=2)
         self.entries["entry_clearance"] = ttk.Entry(frame, width=12)
         self.entries["entry_clearance"].insert(0, "1.000")
-        self.entries["entry_clearance"].grid(row=4, column=3, sticky=tk.W, pady=2, padx=(0, 12))
-        ttk.Label(frame, text="Schneiden-Ueberdeckung C [mm]:").grid(row=4, column=4, sticky=tk.W, pady=2)
+        self.entries["entry_clearance"].grid(row=3, column=3, sticky=tk.W, pady=2, padx=(0, 12))
+        ttk.Label(frame, text="Schneiden-Ueberdeckung C [mm]:").grid(row=3, column=4, sticky=tk.W, pady=2)
         self.entries["full_cut_overlap_mm"] = ttk.Entry(frame, width=12)
         self.entries["full_cut_overlap_mm"].insert(0, "0.250")
-        self.entries["full_cut_overlap_mm"].grid(row=4, column=5, sticky=tk.W, pady=2)
+        self.entries["full_cut_overlap_mm"].grid(row=3, column=5, sticky=tk.W, pady=2)
 
+        ttk.Label(
+            frame,
+            text="HEULE-Programmierbeispiel: X-Sicherheit 2,0 mm / A-Sicherheit 1,0 mm / C-Ueberdeckung 0,25 mm – vor Einsatz pruefen.",
+            font=("Segoe UI", 8),
+        ).grid(row=4, column=0, columnspan=6, sticky=tk.W, pady=(0, 4))
+
+        self.bsf_z0_var = tk.StringVar(value="Z0.000")
+        self.bsf_sink_depth_var = tk.StringVar(value="—")
         self.bsf_target_cutting_edge_var = tk.StringVar(value="—")
         self.bsf_material_removal_var = tk.StringVar(value="—")
         self.bsf_programmed_face_var = tk.StringVar(value="—")
+        self.bsf_position_a_var = tk.StringVar(value="—")
+        self.bsf_position_x_var = tk.StringVar(value="—")
+        self.bsf_position_b_var = tk.StringVar(value="—")
+        self.bsf_position_c_var = tk.StringVar(value="—")
+        self.bsf_position_d_var = tk.StringVar(value="—")
+        self.bsf_al_var = tk.StringVar(value="—")
+        self.bsf_hs_var = tk.StringVar(value="—")
 
         summary = ttk.LabelFrame(frame, text="Werkstueck / Geometrie (read-only)", padding=6)
         summary.grid(row=5, column=0, columnspan=6, sticky=tk.EW, pady=(6, 2))
-        ttk.Label(summary, text="Ziel-Senkflaeche (Schneide):").grid(row=0, column=0, sticky=tk.W, padx=(0, 8), pady=1)
-        ttk.Label(summary, textvariable=self.bsf_target_cutting_edge_var).grid(row=0, column=1, sticky=tk.W, pady=1)
-        ttk.Label(summary, text="Materialabtrag:").grid(row=1, column=0, sticky=tk.W, padx=(0, 8), pady=1)
-        ttk.Label(summary, textvariable=self.bsf_material_removal_var).grid(row=1, column=1, sticky=tk.W, pady=1)
-        ttk.Label(summary, text="Werkzeug-Vermessflaeche:").grid(row=2, column=0, sticky=tk.W, padx=(0, 8), pady=1)
-        ttk.Label(summary, textvariable=self.bsf_programmed_face_var).grid(row=2, column=1, sticky=tk.W, pady=1)
-        self.bsf_position_x_var = tk.StringVar(value="—")
-        self.bsf_position_a_var = tk.StringVar(value="—")
-        ttk.Label(summary, text="Position X (HEULE):").grid(row=3, column=0, sticky=tk.W, padx=(0, 8), pady=1)
-        ttk.Label(summary, textvariable=self.bsf_position_x_var).grid(row=3, column=1, sticky=tk.W, pady=1)
-        ttk.Label(summary, text="Position A (HEULE):").grid(row=4, column=0, sticky=tk.W, padx=(0, 8), pady=1)
-        ttk.Label(summary, textvariable=self.bsf_position_a_var).grid(row=4, column=1, sticky=tk.W, pady=1)
+        rows = [
+            (0, "Werkstuecknullpunkt:", self.bsf_z0_var),
+            (1, "Senktiefe (abgeleitet):", self.bsf_sink_depth_var),
+            (2, "Materialabtrag:", self.bsf_material_removal_var),
+            (3, "Position A:", self.bsf_position_a_var),
+            (4, "Position X:", self.bsf_position_x_var),
+            (5, "Position B:", self.bsf_position_b_var),
+            (6, "Position C:", self.bsf_position_c_var),
+            (7, "Position D / Werkzeug-Vermessflaeche:", self.bsf_position_d_var),
+            (8, "Zielposition reale Schneide:", self.bsf_target_cutting_edge_var),
+            (9, "AL:", self.bsf_al_var),
+            (10, "Hs:", self.bsf_hs_var),
+        ]
+        for r, label, var in rows:
+            ttk.Label(summary, text=label).grid(row=r, column=0, sticky=tk.W, padx=(0, 8), pady=1)
+            ttk.Label(summary, textvariable=var).grid(row=r, column=1, sticky=tk.W, pady=1)
         summary.columnconfigure(1, weight=1)
 
         self.reduce_approach_var = tk.BooleanVar(value=True)
@@ -1068,7 +1063,6 @@ class BSFGeneratorGUI:
             self.bgf_size_var,
             self.output_tool_def_var,
             self.bsf_tool_profile_var,
-            self.z0_var,
             self.reduce_approach_var,
             self.m_activate_var,
             self.m_deactivate_var,
@@ -1270,12 +1264,13 @@ class BSFGeneratorGUI:
         from help_views.bsf_geometry_model import build_bsf_geometry_help_snapshot
 
         return build_bsf_geometry_help_snapshot(
-            bund_text=self.entries["bund_thickness"].get() if "bund_thickness" in self.entries else "",
-            sink_text=self.entries["sink_depth"].get() if "sink_depth" in self.entries else "",
-            clearance_text=self.entries["clearance"].get() if "clearance" in self.entries else "",
-            z0_label=self.z0_var.get(),
-            reference_z_text=self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else "0",
+            entry_text=self.entries["entry_edge_z"].get() if "entry_edge_z" in self.entries else "",
+            exit_text=self.entries["exit_edge_z"].get() if "exit_edge_z" in self.entries else "",
+            target_text=self.entries["target_surface_z"].get() if "target_surface_z" in self.entries else "",
             raw_surface_z_text=self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else "",
+            x_safety_text=self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else "2.000",
+            entry_clearance_text=self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else "1.000",
+            overlap_text=self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else "0.250",
             tool_designation=self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
         )
 
@@ -1309,10 +1304,10 @@ class BSFGeneratorGUI:
             safe_z = 0.0
             end_safe_z = 0.0
 
-        bund = _silent_float("bund_thickness")
-        sink = _silent_float("sink_depth")
-        clearance = _silent_float("clearance")
-        reference_z = _silent_float("bsf_reference_z")
+        bund = None
+        sink = None
+        clearance = None
+        reference_z = 0.0
         tool_profile = self.get_selected_bsf_tool_profile(show_error=False)
         tool_ok = tool_profile is not None
 
@@ -1928,30 +1923,30 @@ class BSFGeneratorGUI:
             blank_size=_entry_float("blank_size", "Rohteil-Kantenlaenge"),
             blank_height=_entry_float("blank_height", "Rohteil-Hoehe"),
             raw_stock_top_z=_entry_float("raw_stock_top_z", "Rohteil-Oberkante Z"),
-            z_reference=z_reference_from_label(self.z0_var.get()),
-            reference_z=_entry_float("bsf_reference_z", "Z-Lage Bezugsebene"),
             raw_surface_z=(
                 None
                 if not self.entries["raw_surface_z"].get().strip()
                 else _entry_float("raw_surface_z", "Rohflaeche / Ist-Z")
             ),
-            deployment_edge_z=(
-                None
-                if not self.entries["deployment_edge_z"].get().strip()
-                else _entry_float("deployment_edge_z", "Ausklappkante / hintere Bohrungskante Z")
-            ),
-            x_safety_clearance=_entry_float("x_safety_clearance", "Ausklapp-Sicherheitsabstand X"),
             entry_edge_z=(
                 None
                 if not self.entries["entry_edge_z"].get().strip()
                 else _entry_float("entry_edge_z", "Bohrungs-Eintrittskante Z")
             ),
+            exit_edge_z=(
+                None
+                if not self.entries["exit_edge_z"].get().strip()
+                else _entry_float("exit_edge_z", "Bohrungs-Austrittskante / Senkseite Z")
+            ),
+            target_surface_z=(
+                None
+                if not self.entries["target_surface_z"].get().strip()
+                else _entry_float("target_surface_z", "Ziel-Senkflaeche Z")
+            ),
+            x_safety_clearance=_entry_float("x_safety_clearance", "Ausklapp-Sicherheitsabstand X"),
             entry_clearance=_entry_float("entry_clearance", "Eintritts-Sicherheitsabstand A"),
             full_cut_overlap_mm=_entry_float("full_cut_overlap_mm", "Schneiden-Ueberdeckung C"),
             tool_profile_key=tool_profile.key,
-            bund_thickness=_entry_float("bund_thickness", "Bund-Dicke"),
-            sink_finish=_entry_float("sink_depth", "Senk-Fertigmaß"),
-            clearance=_entry_float("clearance", "Freifahr-Tiefe"),
             spindle_speed=_entry_int("spindle_speed", "Spindeldrehzahl"),
             feed=_entry_float("feed_rate", "Vorschub"),
             dwell_time=_entry_float("dwell_time", "Wartezeit"),
@@ -1983,16 +1978,12 @@ class BSFGeneratorGUI:
             "raw_stock_top_z": self.entries["raw_stock_top_z"].get(),
             "safe_z": self.entries["safe_z"].get(),
             "end_safe_z": self.entries["end_safe_z"].get(),
-            "bund": self.entries["bund_thickness"].get(),
-            "sink": self.entries["sink_depth"].get(),
-            "clearance": self.entries["clearance"].get(),
             "dwell": self.entries["dwell_time"].get(),
-            "z0": self.z0_var.get(),
-            "reference_z": self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else "0",
             "raw_surface_z": self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else "",
-            "deployment_edge_z": self.entries["deployment_edge_z"].get() if "deployment_edge_z" in self.entries else "",
-            "x_safety_clearance": self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else "2.000",
             "entry_edge_z": self.entries["entry_edge_z"].get() if "entry_edge_z" in self.entries else "",
+            "exit_edge_z": self.entries["exit_edge_z"].get() if "exit_edge_z" in self.entries else "",
+            "target_surface_z": self.entries["target_surface_z"].get() if "target_surface_z" in self.entries else "",
+            "x_safety_clearance": self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else "2.000",
             "entry_clearance": self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else "1.000",
             "full_cut_overlap_mm": self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else "0.250",
             "tool_profile": self.bsf_tool_profile_var.get() if hasattr(self, "bsf_tool_profile_var") else "",
@@ -2017,14 +2008,11 @@ class BSFGeneratorGUI:
         self._set_entry_value("raw_stock_top_z", snapshot.get("raw_stock_top_z", "0.000"))
         self._set_entry_value("safe_z", snapshot["safe_z"])
         self._set_entry_value("end_safe_z", snapshot["end_safe_z"])
-        self._set_entry_value("bund_thickness", snapshot["bund"])
-        self._set_entry_value("sink_depth", snapshot["sink"])
-        self._set_entry_value("clearance", snapshot["clearance"])
         self._set_entry_value("dwell_time", snapshot["dwell"])
-        self.z0_var.set(snapshot["z0"])
-        self._set_entry_value("bsf_reference_z", snapshot.get("reference_z", "0"))
         self._set_entry_value("raw_surface_z", snapshot.get("raw_surface_z", ""))
-        self._set_entry_value("deployment_edge_z", snapshot.get("deployment_edge_z", ""))
+        self._set_entry_value("entry_edge_z", snapshot.get("entry_edge_z", ""))
+        self._set_entry_value("exit_edge_z", snapshot.get("exit_edge_z", snapshot.get("deployment_edge_z", "")))
+        self._set_entry_value("target_surface_z", snapshot.get("target_surface_z", ""))
         self._set_entry_value("x_safety_clearance", snapshot.get("x_safety_clearance", "2.000"))
         self._set_entry_value("entry_edge_z", snapshot.get("entry_edge_z", ""))
         self._set_entry_value("entry_clearance", snapshot.get("entry_clearance", "1.000"))
@@ -2063,14 +2051,14 @@ class BSFGeneratorGUI:
         self._set_entry_value("raw_stock_top_z", f"{doc.raw_stock_top_z:g}")
         self._set_entry_value("safe_z", f"{doc.safe_z:g}")
         self._set_entry_value("end_safe_z", f"{doc.end_safe_z:g}")
-        self._set_entry_value("bund_thickness", f"{doc.bund_thickness:g}")
-        self._set_entry_value("sink_depth", f"{doc.sink_finish:g}")
-        self._set_entry_value("clearance", f"{doc.clearance:g}")
         self._set_entry_value("dwell_time", f"{doc.dwell_time:g}")
-        self.z0_var.set(doc.z0_label)
-        self._set_entry_value("bsf_reference_z", f"{doc.reference_z:g}")
         self._set_entry_value("raw_surface_z", "" if doc.raw_surface_z is None else f"{doc.raw_surface_z:g}")
-        self._set_entry_value("deployment_edge_z", "" if doc.deployment_edge_z is None else f"{doc.deployment_edge_z:g}")
+        self._set_entry_value("entry_edge_z", "" if doc.entry_edge_z is None else f"{doc.entry_edge_z:g}")
+        self._set_entry_value("exit_edge_z", "" if doc.exit_edge_z is None else f"{doc.exit_edge_z:g}")
+        self._set_entry_value(
+            "target_surface_z",
+            "" if doc.target_surface_z is None else f"{doc.target_surface_z:g}",
+        )
         self._set_entry_value("x_safety_clearance", f"{doc.x_safety_clearance:g}")
         self._set_entry_value("entry_edge_z", "" if doc.entry_edge_z is None else f"{doc.entry_edge_z:g}")
         self._set_entry_value("entry_clearance", f"{doc.entry_clearance:g}")
@@ -2184,6 +2172,15 @@ class BSFGeneratorGUI:
             "Laden",
             f"{len(doc.positions)} Position(en) geladen.\nHEULE BSF Projekt: {doc.program_name}",
         )
+        if getattr(doc, "legacy_geometry_needs_confirmation", False):
+            messagebox.showwarning(
+                "Legacy-Geometrie",
+                "Diese Datei enthaelt kein bestaetigtes V5-Z0-Modell.\n\n"
+                "Alte Felder (Bezugsebene / Fertigmaß ab Bezugsebene) werden NICHT "
+                "automatisch in absolute Z-Koordinaten umgerechnet.\n\n"
+                "Bitte Bohrungs-Eintrittskante, Bohrungs-Austrittskante und "
+                "Ziel-Senkflaeche explizit eintragen. NC-Erzeugung bleibt bis dahin blockiert.",
+            )
 
     def bsf_coord_export_csv(self) -> None:
         if self.mode_var.get() != MODE_BSF:
@@ -2707,13 +2704,7 @@ class BSFGeneratorGUI:
         return value
 
     def get_bsf_reference_z(self) -> Optional[float]:
-        ok, value, err = parse_reference_z(
-            self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else ""
-        )
-        if not ok:
-            messagebox.showerror("Z-Lage Bezugsebene", err)
-            return None
-        return value
+        return 0.0
 
     def parse_bsf_raw_surface_z(self, *, show_error: bool = True) -> Optional[float]:
         from bsf_workpiece_geometry import parse_optional_finite_mm
@@ -2729,14 +2720,30 @@ class BSFGeneratorGUI:
     def refresh_bsf_geometry_summary(self) -> None:
         if not hasattr(self, "bsf_target_cutting_edge_var"):
             return
-        if not hasattr(self, "mode_var") or self.mode_var.get() != MODE_BSF:
+
+        def _clear():
+            if hasattr(self, "bsf_z0_var"):
+                self.bsf_z0_var.set("Z0.000")
+            if hasattr(self, "bsf_sink_depth_var"):
+                self.bsf_sink_depth_var.set("—")
             self.bsf_target_cutting_edge_var.set("—")
             self.bsf_material_removal_var.set("—")
-            self.bsf_programmed_face_var.set("—")
-            if hasattr(self, "bsf_position_x_var"):
-                self.bsf_position_x_var.set("—")
-            if hasattr(self, "bsf_position_a_var"):
-                self.bsf_position_a_var.set("—")
+            if hasattr(self, "bsf_programmed_face_var"):
+                self.bsf_programmed_face_var.set("—")
+            for name in (
+                "bsf_position_a_var",
+                "bsf_position_x_var",
+                "bsf_position_b_var",
+                "bsf_position_c_var",
+                "bsf_position_d_var",
+                "bsf_al_var",
+                "bsf_hs_var",
+            ):
+                if hasattr(self, name):
+                    getattr(self, name).set("—")
+
+        if not hasattr(self, "mode_var") or self.mode_var.get() != MODE_BSF:
+            _clear()
             return
         try:
             from bsf_workpiece_geometry import (
@@ -2747,62 +2754,51 @@ class BSFGeneratorGUI:
         except Exception:
             return
 
-        ref = self.entries["bsf_reference_z"].get() if "bsf_reference_z" in self.entries else ""
-        sink = self.entries["sink_depth"].get() if "sink_depth" in self.entries else ""
-        raw = self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else ""
-        dep = self.entries["deployment_edge_z"].get() if "deployment_edge_z" in self.entries else ""
         ent = self.entries["entry_edge_z"].get() if "entry_edge_z" in self.entries else ""
+        ext = self.entries["exit_edge_z"].get() if "exit_edge_z" in self.entries else ""
+        tgt = self.entries["target_surface_z"].get() if "target_surface_z" in self.entries else ""
+        raw = self.entries["raw_surface_z"].get() if "raw_surface_z" in self.entries else ""
         xsf = self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else ""
         ecf = self.entries["entry_clearance"].get() if "entry_clearance" in self.entries else ""
         fco = self.entries["full_cut_overlap_mm"].get() if "full_cut_overlap_mm" in self.entries else ""
         try:
-            ref_z = parse_optional_finite_mm(ref)
-            sink_finish = parse_optional_finite_mm(sink)
-            raw_z = parse_optional_finite_mm(raw)
-            dep_z = parse_optional_finite_mm(dep)
             ent_z = parse_optional_finite_mm(ent)
+            ext_z = parse_optional_finite_mm(ext)
+            tgt_z = parse_optional_finite_mm(tgt)
+            raw_z = parse_optional_finite_mm(raw)
             xsf_z = parse_optional_finite_mm(xsf)
             ecf_z = parse_optional_finite_mm(ecf)
             fco_val = parse_optional_finite_mm(fco)
         except ValueError:
-            self.bsf_target_cutting_edge_var.set("—")
-            self.bsf_material_removal_var.set("—")
-            self.bsf_programmed_face_var.set("—")
-            if hasattr(self, "bsf_position_x_var"):
-                self.bsf_position_x_var.set("—")
-            if hasattr(self, "bsf_position_a_var"):
-                self.bsf_position_a_var.set("—")
+            _clear()
             return
 
         profile = self.get_selected_bsf_tool_profile(show_error=False)
-        if ref_z is None or sink_finish is None or profile is None:
-            self.bsf_target_cutting_edge_var.set("—")
-            self.bsf_material_removal_var.set("—")
-            self.bsf_programmed_face_var.set("—")
-            if hasattr(self, "bsf_position_x_var"):
-                self.bsf_position_x_var.set("—")
-            if hasattr(self, "bsf_position_a_var"):
-                self.bsf_position_a_var.set("—")
+        if hasattr(self, "bsf_z0_var"):
+            self.bsf_z0_var.set("Z0.000")
+        if None in (ent_z, ext_z, tgt_z) or profile is None:
+            _clear()
+            if hasattr(self, "bsf_z0_var"):
+                self.bsf_z0_var.set("Z0.000")
             return
         try:
             geom = build_workpiece_geometry(
-                reference_z=ref_z,
-                sink_finish=sink_finish,
+                entry_edge_z=ent_z,
+                exit_edge_z=ext_z,
+                target_surface_z=tgt_z,
                 raw_surface_z=raw_z,
                 measurement_face_to_cutting_edge_mm=profile.measurement_face_to_cutting_edge_mm,
             )
             pos = None
             if (
-                dep_z is not None
-                and ent_z is not None
-                and xsf_z is not None
+                xsf_z is not None
                 and ecf_z is not None
                 and profile.deployment_length_al_mm is not None
             ):
                 pos = compute_heule_process_positions(
-                    deployment_edge_z=dep_z,
+                    exit_edge_z=ext_z,
                     entry_edge_z=ent_z,
-                    target_cutting_edge_z=geom.target_cutting_edge_z,
+                    target_surface_z=tgt_z,
                     measurement_face_to_cutting_edge_mm=profile.measurement_face_to_cutting_edge_mm,
                     deployment_length_al_mm=profile.deployment_length_al_mm,
                     x_safety_clearance_mm=xsf_z,
@@ -2810,25 +2806,46 @@ class BSFGeneratorGUI:
                     full_cut_overlap_mm=fco_val if fco_val is not None else 0.25,
                 )
         except ValueError:
-            self.bsf_target_cutting_edge_var.set("—")
-            self.bsf_material_removal_var.set("—")
-            self.bsf_programmed_face_var.set("—")
-            if hasattr(self, "bsf_position_x_var"):
-                self.bsf_position_x_var.set("—")
-            if hasattr(self, "bsf_position_a_var"):
-                self.bsf_position_a_var.set("—")
+            _clear()
+            if hasattr(self, "bsf_z0_var"):
+                self.bsf_z0_var.set("Z0.000")
             return
 
-        self.bsf_target_cutting_edge_var.set(f"Z{geom.target_cutting_edge_z:+.3f}")
+        if hasattr(self, "bsf_sink_depth_var"):
+            self.bsf_sink_depth_var.set(f"{geom.sink_depth:.3f} mm")
+        self.bsf_target_cutting_edge_var.set(f"Z{geom.target_surface_z:+.3f}")
         if geom.material_removal is None:
             self.bsf_material_removal_var.set("—")
         else:
             self.bsf_material_removal_var.set(f"{geom.material_removal:.3f} mm")
-        self.bsf_programmed_face_var.set(f"Z{geom.programmed_measurement_face_z:+.3f}")
-        if hasattr(self, "bsf_position_x_var"):
-            self.bsf_position_x_var.set("—" if pos is None else f"Z{pos.x_measurement_face_z:+.3f}")
+        if hasattr(self, "bsf_programmed_face_var"):
+            self.bsf_programmed_face_var.set(f"Z{geom.programmed_measurement_face_z:+.3f}")
+        if hasattr(self, "bsf_hs_var"):
+            self.bsf_hs_var.set(f"{profile.measurement_face_to_cutting_edge_mm:.3f} mm")
+        if hasattr(self, "bsf_al_var"):
+            al = profile.deployment_length_al_mm
+            self.bsf_al_var.set("—" if al is None else f"{al:.3f} mm")
+        if pos is None:
+            for name in (
+                "bsf_position_a_var",
+                "bsf_position_x_var",
+                "bsf_position_b_var",
+                "bsf_position_c_var",
+                "bsf_position_d_var",
+            ):
+                if hasattr(self, name):
+                    getattr(self, name).set("—")
+            return
         if hasattr(self, "bsf_position_a_var"):
-            self.bsf_position_a_var.set("—" if pos is None else f"Z{pos.a_measurement_face_z:+.3f}")
+            self.bsf_position_a_var.set(f"Z{pos.a_measurement_face_z:+.3f}")
+        if hasattr(self, "bsf_position_x_var"):
+            self.bsf_position_x_var.set(f"Z{pos.x_measurement_face_z:+.3f}")
+        if hasattr(self, "bsf_position_b_var"):
+            self.bsf_position_b_var.set(f"Z{pos.b_measurement_face_z:+.3f}")
+        if hasattr(self, "bsf_position_c_var"):
+            self.bsf_position_c_var.set(f"Z{pos.c_measurement_face_z:+.3f}")
+        if hasattr(self, "bsf_position_d_var"):
+            self.bsf_position_d_var.set(f"Z{pos.d_measurement_face_z:+.3f}")
 
     def get_selected_bsf_tool_profile(self, *, show_error: bool = True):
         profile = profile_by_designation(
@@ -3459,37 +3476,11 @@ class BSFGeneratorGUI:
     # ------------------------------------------------------------------
 
     def calculate_bsf_z_values(self):
-        bund_thickness = self.get_float_value("bund_thickness", "Bund-Dicke")
-        sink_depth = self.get_float_value("sink_depth", "Senk-Fertigmaß")
-        clearance = self.get_float_value("clearance", "Freifahr-Tiefe")
-        if any(v is None for v in [bund_thickness, sink_depth, clearance]):
-            return None
-
+        """Liefert Werkzeugprofil; Geometrie kommt ausschliesslich aus direkten Z0-Feldern."""
         tool_profile = self.get_selected_bsf_tool_profile()
         if tool_profile is None:
             return None
-
-        reference_z = self.get_bsf_reference_z()
-        if reference_z is None:
-            return None
-
-        z0_is_flange_bottom = self.z0_var.get() == "Z0 ist Unterkante Bund"
-        # Relativgeometrie unveraendert; danach absolute Schneiden-Ziele, dann Vermesspunkt-Z programmieren.
-        workpiece_relative = calculate_workpiece_bsf_z(
-            bund_thickness,
-            sink_depth,
-            clearance,
-            z0_is_flange_bottom=z0_is_flange_bottom,
-        )
-        target_cutting_edge_z = apply_workpiece_reference_z(workpiece_relative, reference_z)
-        programmed = apply_measurement_face_offset(target_cutting_edge_z, tool_profile)
-        programmed["tool_profile"] = tool_profile
-        programmed["target_cutting_edge_z"] = target_cutting_edge_z
-        programmed["reference_z"] = reference_z
-        programmed["spindle_on_z"] = spindle_on_z(reference_z)
-        programmed["bund_thickness"] = bund_thickness
-        programmed["z0_is_flange_bottom"] = z0_is_flange_bottom
-        return programmed
+        return {"tool_profile": tool_profile}
 
     def get_bsf_end_mode(self) -> str:
         """Aktuellen BSF-Endmodus aus GUI-Variable lesen und validieren."""
@@ -3516,37 +3507,21 @@ class BSFGeneratorGUI:
             return
         blade = z_values["tool_profile"]
 
-        raw_surface_z = self.parse_bsf_raw_surface_z(show_error=True)
-        raw_surface_text = self.entries["raw_surface_z"].get().strip() if "raw_surface_z" in self.entries else ""
-        if raw_surface_text and raw_surface_z is None:
-            return
-        if raw_surface_z is not None:
-            from bsf_workpiece_geometry import build_workpiece_geometry
-
-            try:
-                build_workpiece_geometry(
-                    reference_z=float(z_values["reference_z"]),
-                    sink_finish=float(self.entries["sink_depth"].get().replace(",", ".")),
-                    raw_surface_z=raw_surface_z,
-                    measurement_face_to_cutting_edge_mm=float(
-                        z_values["tool_profile"].measurement_face_to_cutting_edge_mm
-                    ),
-                )
-            except ValueError as exc:
-                messagebox.showerror("Rohflaeche / Ist-Z", str(exc))
-                return
-
-        # HEULE-A/X Prozessgeometrie (A: vor Eintritt, X: hinter Bohrung mit AL-Freiraum)
-        from bsf_workpiece_geometry import compute_heule_process_positions
-
-        from bsf_workpiece_geometry import parse_optional_finite_mm
+        from bsf_workpiece_geometry import (
+            build_workpiece_geometry,
+            compute_heule_process_positions,
+            parse_optional_finite_mm,
+        )
 
         try:
-            deployment_edge_z = parse_optional_finite_mm(
-                self.entries["deployment_edge_z"].get() if "deployment_edge_z" in self.entries else ""
-            )
             entry_edge_z = parse_optional_finite_mm(
                 self.entries["entry_edge_z"].get() if "entry_edge_z" in self.entries else ""
+            )
+            exit_edge_z = parse_optional_finite_mm(
+                self.entries["exit_edge_z"].get() if "exit_edge_z" in self.entries else ""
+            )
+            target_surface_z = parse_optional_finite_mm(
+                self.entries["target_surface_z"].get() if "target_surface_z" in self.entries else ""
             )
             x_safety_clearance = parse_optional_finite_mm(
                 self.entries["x_safety_clearance"].get() if "x_safety_clearance" in self.entries else ""
@@ -3561,16 +3536,6 @@ class BSFGeneratorGUI:
             messagebox.showerror("HEULE Prozessgeometrie", str(exc))
             return
 
-        # FAIL-CLOSED: Kantengeometrie muss explizit angegeben werden.
-        # Kein automatisches Ableiten aus anderen Massen (reference_z, target-1, etc.)
-        if deployment_edge_z is None:
-            messagebox.showerror(
-                "HEULE Prozessgeometrie – Ausklappkante fehlt",
-                "Fuer den HEULE-BSF-Prozess fehlt die hintere Bohrungs-/Ausklappkante Z.\n\n"
-                "Position X kann nicht sicher berechnet werden.\n\n"
-                "Bitte 'Ausklappkante / hintere Bohrungskante Z' eingeben.",
-            )
-            return
         if entry_edge_z is None:
             messagebox.showerror(
                 "HEULE Prozessgeometrie – Eintrittskante fehlt",
@@ -3579,6 +3544,29 @@ class BSFGeneratorGUI:
                 "Bitte 'Bohrungs-Eintrittskante Z' eingeben.",
             )
             return
+        if exit_edge_z is None:
+            messagebox.showerror(
+                "HEULE Prozessgeometrie – Austrittskante fehlt",
+                "Fuer den HEULE-BSF-Prozess fehlt die Bohrungs-Austrittskante / Senkseite Z.\n\n"
+                "Position X kann nicht sicher berechnet werden.\n\n"
+                "Bitte 'Bohrungs-Austrittskante / Senkseite Z' eingeben.",
+            )
+            return
+        if target_surface_z is None:
+            messagebox.showerror(
+                "HEULE Prozessgeometrie – Ziel-Senkflaeche fehlt",
+                "Fuer den HEULE-BSF-Prozess fehlt die Ziel-Senkflaeche Z.\n\n"
+                "Position D kann nicht sicher berechnet werden.\n\n"
+                "Bitte 'Ziel-Senkflaeche Z' explizit eingeben. "
+                "Keine automatische Ableitung aus alten Bezugsebenen-Feldern.",
+            )
+            return
+
+        raw_surface_z = self.parse_bsf_raw_surface_z(show_error=True)
+        raw_surface_text = self.entries["raw_surface_z"].get().strip() if "raw_surface_z" in self.entries else ""
+        if raw_surface_text and raw_surface_z is None:
+            return
+
         if x_safety_clearance is None:
             x_safety_clearance = 2.0
         if entry_clearance is None:
@@ -3597,12 +3585,19 @@ class BSFGeneratorGUI:
         if blade.deployment_length_al_mm is None:
             messagebox.showerror("HEULE AL", "MANUFACTURER_PROFILE_VALUE_MISSING = deployment_length_al_mm")
             return
-        target_cutting_edge_z = z_values["target_cutting_edge_z"]["z_sink_finish"]
+
         try:
-            heule_pos = compute_heule_process_positions(
-                deployment_edge_z=deployment_edge_z,
+            geom = build_workpiece_geometry(
                 entry_edge_z=entry_edge_z,
-                target_cutting_edge_z=target_cutting_edge_z,
+                exit_edge_z=exit_edge_z,
+                target_surface_z=target_surface_z,
+                raw_surface_z=raw_surface_z,
+                measurement_face_to_cutting_edge_mm=float(blade.measurement_face_to_cutting_edge_mm),
+            )
+            heule_pos = compute_heule_process_positions(
+                exit_edge_z=exit_edge_z,
+                entry_edge_z=entry_edge_z,
+                target_surface_z=target_surface_z,
                 measurement_face_to_cutting_edge_mm=blade.measurement_face_to_cutting_edge_mm,
                 deployment_length_al_mm=blade.deployment_length_al_mm,
                 x_safety_clearance_mm=x_safety_clearance,
@@ -3613,29 +3608,13 @@ class BSFGeneratorGUI:
             messagebox.showerror("HEULE Prozessgeometrie", str(exc))
             return
 
-        # D-INVARIANTE: heule_pos.d_measurement_face_z und z_values["z_sink_finish"]
-        # muessen fachlich identisch sein (beide = target_cutting_edge_z - Hs).
-        _D_TOLERANCE = 1e-9
-        d_heule = heule_pos.d_measurement_face_z
-        d_existing = z_values["z_sink_finish"]
-        if abs(d_heule - d_existing) > _D_TOLERANCE:
-            messagebox.showerror(
-                "HEULE D-Invariante verletzt",
-                f"INTERNER FEHLER: D-Position aus HEULE-Modell ({d_heule:.6f}) "
-                f"stimmt nicht mit bestehendem z_sink_finish ({d_existing:.6f}) ueberein.\n\n"
-                f"Abweichung: {abs(d_heule - d_existing):.2e} > Toleranz {_D_TOLERANCE:.0e}\n\n"
-                "NC-Erzeugung blockiert. Bitte Entwickler informieren.",
-            )
-            return
+        z_values["z_sink_finish"] = heule_pos.d_measurement_face_z
+        z_values["target_surface_z"] = geom.target_surface_z
 
-        safe_err = validate_bsf_safe_z_against_reference(
+        safe_err = validate_bsf_safe_z_direct(
             common["safe_z"],
             common["end_safe_z"],
-            z_values,
-            reference_z=z_values["reference_z"],
-            bund_thickness=z_values["bund_thickness"],
-            z0_is_flange_bottom=z_values["z0_is_flange_bottom"],
-            reduce_approach=bool(self.reduce_approach_var.get()),
+            heule_pos,
         )
         if safe_err:
             messagebox.showerror("Sicherheits-Z", safe_err)
@@ -3652,18 +3631,21 @@ class BSFGeneratorGUI:
         if programmer_line:
             code.append(programmer_line)
         code.append("; HEULE BSF Rueckwaertssenken - Nullpunkt/Z-Werte vor Einsatz pruefen")
+        code.append("; WERKSTUECKNULLPUNKT: Z0 = 0.000")
+        code.append("; Z-KOORDINATEN: DIREKT IM AKTIVEN WERKSTUECKSYSTEM")
         code.append(bsf_end_mode_comment(end_mode))
         code.append(f"; WERKZEUG: {blade.designation}")
         code.append(f"; VERMESSUNG: {MEASUREMENT_NC_COMMENT}")
         code.append(f"; VERMESSFLAECHE -> SCHNEIDE: +{blade.measurement_face_to_cutting_edge_mm:.3f} MM")
         code.append(f"; AL (AUSKLAPPLAENGE): +{blade.deployment_length_al_mm:.3f} MM")
+        code.append(f"; Hs: +{blade.measurement_face_to_cutting_edge_mm:.3f} MM")
         code.append(f"; OFFSET-RICHTUNG: {MEASUREMENT_OFFSET_DIRECTION.upper()} ZUR SPINDEL")
         if blade.activation_speed_rpm is not None:
             code.append(f"; HEULE AKTIVIERUNGSDREHZAHL: {blade.activation_speed_rpm:d} U/MIN")
-        # BLK FORM nur aus raw_stock_top_z. BSF Domain-Safety (reference_z /
-        # TOP_EDGE vs. BOTTOM_EDGE innerhalb der Rohteil-Z-Ausdehnung) wird
-        # hier bewusst nicht automatisch geprueft: Bund- und Bezugssemantik
-        # sind nicht generisch auf Stock-Z abbildbar. PHASE BLKFORM.ZREF.1 #20.
+        code.append(f"; EINTRITTSKANTE: Z{entry_edge_z:+.4f}")
+        code.append(f"; AUSTRITTSKANTE/SENKSEITE: Z{exit_edge_z:+.4f}")
+        code.append(f"; ZIEL-SENKFLAECHE SCHNEIDE: Z{target_surface_z:+.4f}")
+        code.append(f"; POSITION X: Z{heule_pos.x_measurement_face_z:+.4f}")
         self.add_block_form(code, common)
         code.append(f"TOOL CALL {tool_num} Z S{spindle_speed}")
         code.append(f"L {fmt_axis('Z', common['end_safe_z'])} R0 FMAX")
@@ -3778,10 +3760,10 @@ class BSFGeneratorGUI:
 
         if self.reduce_approach_var.get():
             lines.append(f"L {fmt_axis('Z', heule_pos.c_measurement_face_z)} R0 F{feed_rate:.0f} ; C Schneide greift")
-            lines.append(f"L {fmt_axis('Z', z_values['z_sink_finish'])} R0 F{feed_rate * 0.5:.0f} ; Senken mit 50 Prozent Vorschub")
+            lines.append(f"L {fmt_axis('Z', heule_pos.d_measurement_face_z)} R0 F{feed_rate * 0.5:.0f} ; Senken mit 50 Prozent Vorschub")
         else:
             lines.append(f"L {fmt_axis('Z', heule_pos.c_measurement_face_z)} R0 F{feed_rate:.0f} ; C Schneide greift")
-            lines.append(f"L {fmt_axis('Z', z_values['z_sink_finish'])} R0 F{feed_rate:.0f} ; Senken auf Fertigmass")
+            lines.append(f"L {fmt_axis('Z', heule_pos.d_measurement_face_z)} R0 F{feed_rate:.0f} ; Senken auf Fertigmass")
 
         lines.append(f"L {fmt_axis('Z', heule_pos.x_measurement_face_z)} R0 FMAX ; Zurueck nach X")
         lines.append("M5 ; Spindel aus")

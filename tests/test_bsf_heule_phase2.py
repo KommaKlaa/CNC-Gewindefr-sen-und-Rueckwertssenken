@@ -26,28 +26,31 @@ class TestBsfWorkpieceGeometry(unittest.TestCase):
 
     def test_user_example_target_and_removal(self):
         geom = build_workpiece_geometry(
-            reference_z=60.0,
+            entry_edge_z=101.0,
+            exit_edge_z=75.0,
+            target_surface_z=80.5,
             raw_surface_z=75.0,
-            sink_finish=20.5,
             measurement_face_to_cutting_edge_mm=8.55,
         )
-        self.assertAlmostEqual(geom.target_cutting_edge_z, 80.5, places=3)
+        self.assertAlmostEqual(geom.target_surface_z, 80.5, places=3)
         self.assertAlmostEqual(geom.material_removal, 5.5, places=3)
 
     def test_user_example_programmed_measurement_face_bsf_c(self):
         geom = build_workpiece_geometry(
-            reference_z=60.0,
+            entry_edge_z=101.0,
+            exit_edge_z=75.0,
+            target_surface_z=80.5,
             raw_surface_z=75.0,
-            sink_finish=20.5,
             measurement_face_to_cutting_edge_mm=8.55,
         )
         self.assertAlmostEqual(geom.programmed_measurement_face_z, 71.95, places=3)
 
     def test_user_example_programmed_measurement_face_bsf_e(self):
         geom = build_workpiece_geometry(
-            reference_z=60.0,
+            entry_edge_z=101.0,
+            exit_edge_z=75.0,
+            target_surface_z=80.5,
             raw_surface_z=75.0,
-            sink_finish=20.5,
             measurement_face_to_cutting_edge_mm=11.4,
         )
         self.assertAlmostEqual(geom.programmed_measurement_face_z, 69.1, places=3)
@@ -55,9 +58,10 @@ class TestBsfWorkpieceGeometry(unittest.TestCase):
     def test_negative_material_removal_blocked(self):
         with self.assertRaises(ValueError):
             build_workpiece_geometry(
-                reference_z=60.0,
+                entry_edge_z=101.0,
+                exit_edge_z=75.0,
+                target_surface_z=80.5,
                 raw_surface_z=85.0,
-                sink_finish=20.5,
                 measurement_face_to_cutting_edge_mm=8.55,
             )
 
@@ -75,9 +79,9 @@ class TestBsfWorkpieceGeometry(unittest.TestCase):
         from bsf_workpiece_geometry import compute_heule_process_positions
 
         pos = compute_heule_process_positions(
-            deployment_edge_z=60.0,
+            exit_edge_z=60.0,
             entry_edge_z=0.0,
-            target_cutting_edge_z=80.5,
+            target_surface_z=80.5,
             measurement_face_to_cutting_edge_mm=8.55,
             deployment_length_al_mm=20.250,
             x_safety_clearance_mm=2.0,
@@ -89,9 +93,9 @@ class TestBsfWorkpieceGeometry(unittest.TestCase):
         from bsf_workpiece_geometry import compute_heule_process_positions
 
         pos = compute_heule_process_positions(
-            deployment_edge_z=60.0,
+            exit_edge_z=60.0,
             entry_edge_z=0.0,
-            target_cutting_edge_z=80.5,
+            target_surface_z=80.5,
             measurement_face_to_cutting_edge_mm=11.4,
             deployment_length_al_mm=26.750,
             x_safety_clearance_mm=2.0,
@@ -103,9 +107,9 @@ class TestBsfWorkpieceGeometry(unittest.TestCase):
         from bsf_workpiece_geometry import compute_heule_process_positions
 
         pos = compute_heule_process_positions(
-            deployment_edge_z=60.0,
+            exit_edge_z=60.0,
             entry_edge_z=0.0,
-            target_cutting_edge_z=80.5,
+            target_surface_z=80.5,
             measurement_face_to_cutting_edge_mm=8.55,
             deployment_length_al_mm=20.250,
             x_safety_clearance_mm=2.0,
@@ -119,9 +123,9 @@ class TestBsfWorkpieceGeometry(unittest.TestCase):
         # Herstellerbeispiel als Formelregression (Betrag)
         # E=30, AL=22.5, safety=2.0, Hs=9.6, sink=8.0 -> X=54.5, B=40.6, C=39.35, D=31.6
         pos = compute_heule_process_positions(
-            deployment_edge_z=-30.0,
+            exit_edge_z=-30.0,
             entry_edge_z=0.0,
-            target_cutting_edge_z=-22.0,
+            target_surface_z=-22.0,
             measurement_face_to_cutting_edge_mm=9.6,
             deployment_length_al_mm=22.5,
             x_safety_clearance_mm=2.0,
@@ -141,12 +145,8 @@ class TestBsfDocumentV3(unittest.TestCase):
             tool_number=8,
             blank_size=1000.0,
             blank_height=60.0,
-            z_reference="BOTTOM_EDGE",
-            tool_profile_key="BSF_C_1000_050_10_5_23",
-            bund_thickness=18.0,
-            sink_finish=38.0,
-            clearance=23.0,
-            spindle_speed=1500,
+                tool_profile_key="BSF_C_1000_050_10_5_23",
+                        spindle_speed=1500,
             feed=120.0,
             dwell_time=1.5,
             reduce_approach=True,
@@ -158,13 +158,15 @@ class TestBsfDocumentV3(unittest.TestCase):
             safe_z=100.0,
             end_safe_z=200.0,
             positions=[BSFCoordinatePosition(0.0, 0.0)],
-            reference_z=60.0,
+            entry_edge_z=20.0,
+            exit_edge_z=-5.0,
+            target_surface_z=38.0,
         )
         base.update(kwargs)
         return build_bsf_document(**base)
 
     def test_json_version_3(self):
-        self.assertEqual(FORMAT_VERSION, 4)
+        self.assertEqual(FORMAT_VERSION, 5)
 
     def test_roundtrip_raw_surface(self):
         doc = self._doc(raw_surface_z=75.0)
@@ -177,7 +179,13 @@ class TestBsfDocumentV3(unittest.TestCase):
         doc = self._doc(raw_surface_z=75.0)
         payload = document_to_dict(doc)
         payload["version"] = 2
-        del payload["workpiece"]["raw_surface_z"]
+        payload["workpiece"] = {
+            "z_reference": "BOTTOM_EDGE",
+            "reference_z": 0.0,
+            "bund_thickness": 18.0,
+            "sink_finish": 38.0,
+            "clearance": 23.0,
+        }
         parsed = parse_document_dict(payload)
         self.assertIsNone(parsed.raw_surface_z)
 
@@ -221,11 +229,9 @@ class TestBsfHelpWindowPhase2(unittest.TestCase):
 
     def test_snapshot_contains_target_values(self):
         snap = build_bsf_geometry_help_snapshot(
-            bund_text="18",
-            sink_text="20.5",
-            clearance_text="23",
-            z0_label="Z0 ist Unterkante Bund",
-            reference_z_text="60.0",
+            entry_text="101",
+            exit_text="75",
+            target_text="80.5",
             raw_surface_z_text="75.0",
             tool_designation="BSF-C-1000/050-10.5-23",
         )
@@ -262,21 +268,17 @@ class TestBsfRawSurfaceStale(unittest.TestCase):
         app.bsf_tool_profile_var.set("BSF-C-1000/050-10.5-23")
         app.on_bsf_tool_profile_change()
         for key, val in (
-            ("bund_thickness", "18"),
-            ("sink_depth", "38"),
-            ("clearance", "23"),
             ("single_x", "0"),
             ("single_y", "0"),
             ("safe_z", "100"),
             ("end_safe_z", "200"),
-            ("bsf_reference_z", "60"),
             ("raw_surface_z", "75"),
             ("spindle_speed", "800"),
             ("feed_rate", "60"),
             ("dwell_time", "1.0"),
-            # FAIL-CLOSED: ref=60, sink=38 -> target=98; dep=55 (ref-5): X=32.75, B=45.45, C=46.7, D=89.45
-            ("deployment_edge_z", "55"),
+            ("exit_edge_z", "55"),
             ("entry_edge_z", "80"),
+            ("target_surface_z", "98"),
             ("x_safety_clearance", "2.000"),
             ("entry_clearance", "1.000"),
             ("full_cut_overlap_mm", "0.250"),
@@ -313,9 +315,9 @@ class TestBsfHeuleSequence(unittest.TestCase):
             ("single_y", "0"),
             ("safe_z", "100"),
             ("end_safe_z", "200"),
-            ("bsf_reference_z", "60"),
+            
             ("raw_surface_z", "75"),
-            ("deployment_edge_z", "60"),
+            ("exit_edge_z", "60"), ("target_surface_z", "80.5"),
             ("x_safety_clearance", "2.0"),
             ("entry_edge_z", "0"),
             ("entry_clearance", "1.0"),
@@ -323,6 +325,8 @@ class TestBsfHeuleSequence(unittest.TestCase):
             ("feed_rate", "60"),
             ("dwell_time", "1.0"),
         ):
+            if key not in app.entries:
+                continue
             app.entries[key].delete(0, "end")
             app.entries[key].insert(0, val)
         app.generate_bsf_code()

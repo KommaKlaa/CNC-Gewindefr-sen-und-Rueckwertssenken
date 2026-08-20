@@ -15,7 +15,9 @@ HEULE_ATTRIBUTION_TEXT = (
 )
 HEULE_DISCLAIMER_TEXT = (
     "Die dargestellten Herstellerwerte sind Beispielwerte und gelten "
-    "nicht automatisch fuer das aktuell ausgewaehlte Werkzeug."
+    "nicht automatisch fuer das aktuell ausgewaehlte Werkzeug. "
+    "Herstellerabbildung zur Prozessreferenz. Der tatsaechliche "
+    "Werkstuecknullpunkt wird beim Einrichten festgelegt."
 )
 HEULE_MISSING_ASSET_TEXT = "Originale HEULE-Herstellerabbildung ist lokal nicht installiert."
 

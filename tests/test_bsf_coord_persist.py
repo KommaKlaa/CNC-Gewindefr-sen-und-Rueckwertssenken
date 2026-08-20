@@ -13,17 +13,24 @@ TOOL_C = BSF_TOOL_PROFILES["BSF_C_1000_050_10_5_23"]
 TOOL_E = BSF_TOOL_PROFILES["BSF_E_1350_050_16_5_14"]
 
 
+def _legacy_workpiece_fields() -> dict:
+    """Minimale V1–V4-Werkstückfelder ohne Auto-Migration auf V5-Z."""
+    return {
+        "z_reference": "BOTTOM_EDGE",
+        "reference_z": 0.0,
+        "bund_thickness": 18.0,
+        "sink_finish": 38.0,
+        "clearance": 23.0,
+    }
+
+
 def _doc(tool_profile_key: str = TOOL_C.key, **kwargs):
     base = dict(
         program_name="BSF_TEST",
         tool_number=8,
         blank_size=1000.0,
         blank_height=60.0,
-        z_reference="BOTTOM_EDGE",
         tool_profile_key=tool_profile_key,
-        bund_thickness=18.0,
-        sink_finish=38.0,
-        clearance=23.0,
         spindle_speed=1500,
         feed=120.0,
         dwell_time=1.5,
@@ -36,7 +43,9 @@ def _doc(tool_profile_key: str = TOOL_C.key, **kwargs):
         safe_z=100.0,
         end_safe_z=200.0,
         positions=[BSFCoordinatePosition(0.0, 0.0), BSFCoordinatePosition(100.0, 50.0)],
-        reference_z=0.0,
+        entry_edge_z=20.0,
+        exit_edge_z=-5.0,
+        target_surface_z=38.0,
     )
     base.update(kwargs)
     return build_bsf_document(**base)
@@ -65,6 +74,7 @@ class TestBsfPersist(unittest.TestCase):
         payload["version"] = 1
         payload["blade"] = {"thickness": 3.0, "measurement_reference": "SPINDLE_SIDE_EDGE"}
         del payload["tool"]
+        payload["workpiece"] = _legacy_workpiece_fields()
         loaded = parse_document_dict(payload)
         self.assertIsNone(loaded.tool_profile_key)
         self.assertEqual(loaded.reference_z, 0.0)
@@ -77,10 +87,11 @@ class TestBsfPersist(unittest.TestCase):
         app = gen.BSFGeneratorGUI(root)
         app.mode_var.set(MODE_BSF)
         app.on_mode_change(None)
-        payload = document_to_dict(_doc(reference_z=20.0))
+        payload = document_to_dict(_doc())
         payload["version"] = 1
         payload["blade"] = {"thickness": 3.0, "measurement_reference": "SPINDLE_SIDE_EDGE"}
         del payload["tool"]
+        payload["workpiece"] = _legacy_workpiece_fields()
         doc = parse_document_dict(payload)
         app._apply_bsf_position_list_document(doc)
         self.assertEqual(app.bsf_tool_profile_var.get(), "--- bitte HEULE-Werkzeug waehlen ---")
@@ -101,10 +112,10 @@ class TestBsfPersist(unittest.TestCase):
         app.entries["spindle_speed"].insert(0, "777")
         # FAIL-CLOSED: Pflichtparameter setzen
         for k, v in [
-            ("bund_thickness", "18"), ("sink_depth", "38"), ("clearance", "23"),
-            ("bsf_reference_z", "0"), ("safe_z", "100"), ("end_safe_z", "200"),
+            
+            ("safe_z", "100"), ("end_safe_z", "200"),
             ("feed_rate", "60"), ("dwell_time", "1.5"),
-            ("deployment_edge_z", "-5"), ("entry_edge_z", "20"),
+            ("entry_edge_z", "20"), ("exit_edge_z", "-5"), ("target_surface_z", "38"),
             ("x_safety_clearance", "2.000"), ("entry_clearance", "1.000"),
             ("full_cut_overlap_mm", "0.250"),
         ]:
